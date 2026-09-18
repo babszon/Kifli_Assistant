@@ -1,0 +1,31 @@
+# Jelszavak, kulcsok - SOHA ne kerüljön a repóba
+.env
+.env.local
+
+# A megtanult termékek és a napló
+*.db
+*.db-journal
+
+# Ideiglenes fájlok
+valasz*.json
+mock.json
+lista.txt
+*.wav
+*.mp3
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Szerkesztő és rendszer
+.DS_Store
+.vscode/
+.idea/
+*.swp
+
+# A grafikus felület által generált
+webui/*.map

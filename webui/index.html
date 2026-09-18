@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kifli asszisztens</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --kobalt:#132B52; --felulet:#1B3A6B; --felulet-2:#22477F;
+  --krem:#F6F3E9; --halvany:#7E96BC; --pipacs:#C8322B; --zold:#7FB069;
+  --arany:#D9A441; --vonal:rgba(246,243,233,.14);
+  --beszed:'Fraunces',Georgia,serif;
+  --ui:'IBM Plex Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  background:var(--kobalt); color:var(--krem); font-family:var(--ui);
+  font-size:15px; line-height:1.55; -webkit-font-smoothing:antialiased;
+  overflow:hidden;
+}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+button:focus-visible,[tabindex]:focus-visible{
+  outline:2px solid var(--arany); outline-offset:3px; border-radius:3px;
+}
+
+/* ─── váz ─────────────────────────────────────────────── */
+.vaz{display:grid;grid-template-columns:1fr 340px;height:100vh}
+@media(max-width:900px){
+  .vaz{grid-template-columns:1fr;grid-template-rows:1fr auto}
+}
+
+/* ─── fejléc ──────────────────────────────────────────── */
+.fej{
+  display:flex;align-items:center;gap:14px;
+  padding:18px 28px;border-bottom:1px solid var(--vonal);
+}
+.jel{width:22px;height:22px;flex:none}
+.cim{font-family:var(--beszed);font-size:19px;font-weight:500;
+     letter-spacing:.01em}
+.allapot{
+  margin-left:auto;display:flex;align-items:center;gap:8px;
+  font-size:13px;color:var(--halvany);
+}
+.pont{width:7px;height:7px;border-size:0;border-radius:50%;
+      background:var(--halvany);transition:background .25s}
+.allapot[data-a="hallgat"] .pont{background:var(--pipacs);
+  animation:lüktet 1.1s ease-in-out infinite}
+.allapot[data-a="gondolkodik"] .pont{background:var(--arany)}
+.allapot[data-a="beszel"] .pont{background:var(--zold)}
+.allapot[data-a="kesz"] .pont{background:var(--zold)}
+@keyframes lüktet{0%,100%{opacity:1}50%{opacity:.25}}
+.proba-jel{
+  font-size:11px;padding:3px 9px;border:1px solid var(--arany);
+  border-radius:99px;color:var(--arany);letter-spacing:.02em;
+}
+
+/* ─── beszélgetés ─────────────────────────────────────── */
+.bal{display:flex;flex-direction:column;min-height:0}
+.folyam{
+  flex:1;overflow-y:auto;padding:28px 28px 12px;
+  display:flex;flex-direction:column;gap:22px;
+  scrollbar-width:thin;scrollbar-color:var(--felulet-2) transparent;
+}
+.folyam::-webkit-scrollbar{width:8px}
+.folyam::-webkit-scrollbar-thumb{background:var(--felulet-2);border-radius:4px}
+
+.uzenet{max-width:62ch}
+.uzenet .ki{font-size:12px;color:var(--halvany);margin-bottom:5px}
+.te{align-self:flex-end;text-align:right}
+.te .szoveg{
+  display:inline-block;background:var(--felulet);
+  padding:10px 15px;border-radius:14px 14px 3px 14px;text-align:left;
+}
+.ai .szoveg{
+  font-family:var(--beszed);font-size:18px;line-height:1.5;
+  font-variation-settings:'opsz' 20;
+}
+.ai .szoveg em{font-style:normal;color:var(--arany)}
+
+/* ─── találati kártya ─────────────────────────────────── */
+.talalatok{
+  max-width:62ch;border:1px solid var(--vonal);border-radius:10px;
+  overflow:hidden;background:rgba(27,58,107,.4);
+}
+.talalatok summary{
+  padding:9px 14px;font-size:12.5px;color:var(--halvany);
+  cursor:pointer;list-style:none;display:flex;gap:8px;align-items:center;
+}
+.talalatok summary::-webkit-details-marker{display:none}
+.talalatok summary::before{content:'▸';font-size:10px;transition:transform .2s}
+.talalatok[open] summary::before{transform:rotate(90deg)}
+.sor{
+  display:grid;grid-template-columns:1fr auto auto;gap:14px;
+  padding:7px 14px;font-size:13px;border-top:1px solid var(--vonal);
+  align-items:baseline;
+}
+.sor .nev{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sor .ar{font-variant-numeric:tabular-nums;color:var(--krem)}
+.sor .egys{font-size:11.5px;color:var(--halvany);
+           font-variant-numeric:tabular-nums}
+.cimke{font-size:10.5px;padding:1px 7px;border-radius:99px;white-space:nowrap}
+.cimke.akcio{background:rgba(200,50,43,.22);color:#F09B95}
+.cimke.olcso{background:rgba(127,176,105,.2);color:var(--zold)}
+
+.rendszer{font-size:12.5px;color:var(--halvany);max-width:62ch}
+.rendszer.baj{color:#F09B95}
+
+/* ─── mikrofon ────────────────────────────────────────── */
+.also{padding:14px 28px 26px;border-top:1px solid var(--vonal)}
+.beviteli{display:flex;gap:12px;align-items:center}
+.mikro{
+  width:54px;height:54px;flex:none;border-radius:50%;
+  background:var(--felulet);display:grid;place-items:center;
+  transition:background .2s,transform .12s,box-shadow .3s;
+}
+.mikro:active{transform:scale(.94)}
+.mikro svg{width:22px;height:22px}
+.mikro[data-be="1"]{background:var(--pipacs)}
+.mikro[data-be="1"].hangos{box-shadow:0 0 0 var(--gyuru,0) rgba(200,50,43,.28)}
+.gepeles{
+  flex:1;background:var(--felulet);border:1px solid transparent;
+  border-radius:27px;padding:15px 20px;color:var(--krem);
+  font-size:15px;transition:border-color .2s;
+}
+.gepeles:focus{outline:none;border-color:var(--felulet-2)}
+.gepeles::placeholder{color:var(--halvany)}
+.sugo{margin-top:9px;font-size:12px;color:var(--halvany);text-align:center}
+
+/* ─── kosár ───────────────────────────────────────────── */
+.jobb{
+  background:rgba(0,0,0,.16);border-left:1px solid var(--vonal);
+  display:flex;flex-direction:column;min-height:0;
+}
+@media(max-width:900px){
+  .jobb{border-left:none;border-top:1px solid var(--vonal);max-height:42vh}
+}
+.kosar-fej{
+  display:flex;align-items:baseline;gap:9px;
+  padding:18px 22px 12px;border-bottom:1px solid var(--vonal);
+}
+.kosar-fej h2{font-family:var(--beszed);font-size:16px;font-weight:500}
+.darab{
+  font-size:11.5px;color:var(--halvany);margin-left:auto;
+  font-variant-numeric:tabular-nums;
+}
+.kosar-lista{flex:1;overflow-y:auto;padding:8px 0}
+.tetel{
+  display:grid;grid-template-columns:auto 1fr auto;gap:11px;
+  padding:11px 22px;align-items:baseline;font-size:13.5px;
+}
+.tetel.uj{animation:bejon .45s cubic-bezier(.2,.8,.3,1)}
+@keyframes bejon{
+  from{opacity:0;transform:translateX(14px);background:rgba(127,176,105,.14)}
+  to{opacity:1;transform:none;background:transparent}
+}
+.tetel .db{
+  color:var(--halvany);font-variant-numeric:tabular-nums;font-size:12.5px;
+}
+.tetel .nev{line-height:1.35}
+.tetel .ar{font-variant-numeric:tabular-nums;white-space:nowrap}
+.ures{padding:34px 22px;color:var(--halvany);font-size:13.5px;text-align:center}
+.kosar-labl{padding:16px 22px 20px;border-top:1px solid var(--vonal)}
+.osszeg{display:flex;justify-content:space-between;align-items:baseline}
+.osszeg .szam{
+  font-family:var(--beszed);font-size:23px;
+  font-variant-numeric:tabular-nums;
+}
+.intes{
+  margin-top:11px;padding:9px 12px;border-radius:7px;font-size:12px;
+  background:rgba(217,164,65,.13);color:var(--arany);
+}
+.befejez{
+  display:block;width:100%;margin-top:14px;padding:12px;
+  background:var(--krem);color:var(--kobalt);border-radius:8px;
+  font-weight:500;text-align:center;text-decoration:none;
+  transition:opacity .15s;
+}
+.befejez:hover{opacity:.87}
+
+/* ─── indulóképernyő ──────────────────────────────────── */
+.fedo{
+  position:fixed;inset:0;background:var(--kobalt);z-index:10;
+  display:grid;place-items:center;text-align:center;padding:30px;
+}
+.fedo.el{opacity:0;pointer-events:none;transition:opacity .5s}
+.fedo h1{
+  font-family:var(--beszed);font-size:30px;font-weight:400;
+  font-variation-settings:'opsz' 90;margin-bottom:12px;
+}
+.fedo p{color:var(--halvany);max-width:44ch;margin:0 auto 26px}
+.inditas{
+  padding:13px 30px;background:var(--krem);color:var(--kobalt);
+  border-radius:9px;font-weight:500;
+}
+.fedo .baj{color:#F09B95;margin-top:18px;font-size:13.5px}
+
+@media(prefers-reduced-motion:reduce){
+  *{animation:none!important;transition:none!important}
+}
+</style>
+</head>
+<body>
+
+<div class="fedo" id="fedo">
+  <div>
+    <h1>Kifli asszisztens</h1>
+    <p>Mondd el, mire van szükséged. Megkeresi, kosárba teszi,
+       és megjegyzi, mit szoktál venni.</p>
+    <button class="inditas" id="inditas">Mehet</button>
+    <div class="baj" id="fedo-baj" hidden></div>
+  </div>
+</div>
+
+<div class="vaz">
+  <div class="bal">
+    <header class="fej">
+      <svg class="jel" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M3 15c3-7 9-11 18-12-1 9-5 15-12 18-3 1-6-3-6-6z"
+              stroke="#D9A441" stroke-width="1.6" stroke-linejoin="round"/>
+      </svg>
+      <span class="cim">Kifli asszisztens</span>
+      <span class="proba-jel" id="proba-jel" hidden>próba</span>
+      <span class="allapot" id="allapot" data-a="varakozik">
+        <span class="pont"></span><span id="allapot-szo">csatlakozás</span>
+      </span>
+    </header>
+
+    <div class="folyam" id="folyam" role="log" aria-live="polite"></div>
+
+    <div class="also">
+      <div class="beviteli">
+        <button class="mikro" id="mikro" data-be="0"
+                aria-label="Mikrofon be- és kikapcsolása">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <rect x="9" y="3" width="6" height="11" rx="3"
+                  stroke="#F6F3E9" stroke-width="1.7"/>
+            <path d="M5 11a7 7 0 0 0 14 0M12 18v3"
+                  stroke="#F6F3E9" stroke-width="1.7" stroke-linecap="round"/>
+          </svg>
+        </button>
+        <input class="gepeles" id="gepeles" autocomplete="off"
+               placeholder="vagy írd be, mire van szükséged">
+      </div>
+      <div class="sugo" id="sugo">A mikrofon bekapcsolásához kattints</div>
+    </div>
+  </div>
+
+  <aside class="jobb">
+    <div class="kosar-fej">
+      <h2>Kosár</h2>
+      <span class="darab" id="kosar-darab"></span>
+    </div>
+    <div class="kosar-lista" id="kosar-lista">
+      <div class="ures">Még üres. Mondd, mire van szükséged.</div>
+    </div>
+    <div class="kosar-labl">
+      <div class="osszeg">
+        <span>Összesen</span>
+        <span class="szam" id="osszeg">0 Ft</span>
+      </div>
+      <div class="intes" id="intes" hidden></div>
+      <a class="befejez" href="https://www.kifli.hu/kosar" target="_blank"
+         rel="noopener">Befejezem a Kifli appban</a>
+    </div>
+  </aside>
+</div>
+
+<script>
+const HZ = 24000;
+const $ = s => document.querySelector(s);
+const folyam = $('#folyam');
+
+let ws, hangKi, hangBe, mikroFolyam, dolgozo, jatszoIdo = 0;
+let aiBuborek = null, latottKosar = new Set();
+
+/* ── megjelenítés ─────────────────────────────────────── */
+function gorget(){ folyam.scrollTop = folyam.scrollHeight; }
+
+function uzenet(ki, szoveg){
+  const d = document.createElement('div');
+  d.className = 'uzenet ' + (ki === 'te' ? 'te' : 'ai');
+  d.innerHTML = `<div class="ki">${ki === 'te' ? 'te' : 'asszisztens'}</div>
+                 <div class="szoveg"></div>`;
+  d.querySelector('.szoveg').textContent = szoveg;
+  folyam.appendChild(d); gorget();
+  return d.querySelector('.szoveg');
+}
+
+function rendszer(szoveg, baj){
+  const d = document.createElement('div');
+  d.className = 'rendszer' + (baj ? ' baj' : '');
+  d.textContent = szoveg;
+  folyam.appendChild(d); gorget();
+}
+
+function ft(n){
+  if (n === null || n === undefined) return '';
+  return Math.round(n).toLocaleString('hu-HU').replace(/,/g,' ') + ' Ft';
+}
+
+function talalatok(kereses, lista){
+  if (!lista || !lista.length) return;
+  const d = document.createElement('details');
+  d.className = 'talalatok';
+  const sorok = lista.slice(0,6).map(t => `
+    <div class="sor">
+      <span class="nev">${esc(t.nev)}</span>
+      <span class="egys">${esc(t.egysegar || t.kiszereles || '')}</span>
+      <span class="ar">${t.ar ? ft(t.ar) : ''}
+        ${t.kedvezmeny ? `<span class="cimke akcio">${Math.abs(t.kedvezmeny)}%</span>` : ''}
+        ${t.legolcsobb ? '<span class="cimke olcso">olcsó</span>' : ''}
+      </span>
+    </div>`).join('');
+  d.innerHTML = `<summary>${esc(kereses)} · ${lista.length} találat</summary>${sorok}`;
+  folyam.appendChild(d); gorget();
+}
+
+function esc(s){
+  const d = document.createElement('div');
+  d.textContent = s == null ? '' : String(s);
+  return d.innerHTML;
+}
+
+function allapot(a){
+  const szavak = {varakozik:'csatlakozás', kesz:'kész', hallgat:'hallgat',
+                  gondolkodik:'keres', beszel:'beszél'};
+  $('#allapot').dataset.a = a;
+  $('#allapot-szo').textContent = szavak[a] || a;
+}
+
+function kosarKirajzol(kosar, osszeg, rendelheto){
+  const lista = $('#kosar-lista');
+  if (!kosar || !kosar.length){
+    lista.innerHTML = '<div class="ures">Még üres. Mondd, mire van szükséged.</div>';
+    $('#kosar-darab').textContent = '';
+    $('#osszeg').textContent = '0 Ft';
+    $('#intes').hidden = true;
+    latottKosar.clear();
+    return;
+  }
+  lista.innerHTML = '';
+  let db = 0;
+  for (const t of kosar){
+    db += (t.darab || 1);
+    const kulcs = (t.cart_item_id || t.nev);
+    const uj = !latottKosar.has(kulcs);
+    latottKosar.add(kulcs);
+    const d = document.createElement('div');
+    d.className = 'tetel' + (uj ? ' uj' : '');
+    d.innerHTML = `<span class="db">${t.darab || 1}×</span>
+                   <span class="nev">${esc(t.nev)}</span>
+                   <span class="ar">${ft(t.ar)}</span>`;
+    lista.appendChild(d);
+  }
+  $('#kosar-darab').textContent = db + ' tétel';
+  $('#osszeg').textContent = ft(osszeg);
+  const intes = $('#intes');
+  if (rendelheto === false){
+    intes.textContent = 'A Kifli szerint még nem rendelhető — valószínűleg nincs meg a minimális rendelési érték.';
+    intes.hidden = false;
+  } else intes.hidden = true;
+}
+
+/* ── hang ─────────────────────────────────────────────── */
+const FELDOLGOZO = `
+class Rogzito extends AudioWorkletProcessor {
+  process(be){
+    const cs = be[0] && be[0][0];
+    if (!cs) return true;
+    const ki = new Int16Array(cs.length);
+    for (let i = 0; i < cs.length; i++){
+      const m = Math.max(-1, Math.min(1, cs[i]));
+      ki[i] = m < 0 ? m * 0x8000 : m * 0x7FFF;
+    }
+    let csucs = 0;
+    for (let i = 0; i < cs.length; i++) csucs = Math.max(csucs, Math.abs(cs[i]));
+    this.port.postMessage({puffer: ki.buffer, csucs}, [ki.buffer]);
+    return true;
+  }
+}
+registerProcessor('rogzito', Rogzito);`;
+
+async function mikrofonIndit(){
+  mikroFolyam = await navigator.mediaDevices.getUserMedia({
+    audio: {
+      echoCancellation: true,    // ← ez oldja meg a visszhangot hangszóron
+      noiseSuppression: true,
+      autoGainControl: true,
+      channelCount: 1,
+      sampleRate: HZ
+    }
+  });
+  hangBe = new AudioContext({sampleRate: HZ});
+  const url = URL.createObjectURL(new Blob([FELDOLGOZO],
+                                           {type:'application/javascript'}));
+  await hangBe.audioWorklet.addModule(url);
+  URL.revokeObjectURL(url);
+
+  dolgozo = new AudioWorkletNode(hangBe, 'rogzito');
+  dolgozo.port.onmessage = e => {
+    if (ws && ws.readyState === 1) ws.send(e.data.puffer);
+    const gyuru = Math.min(22, e.data.csucs * 70);
+    $('#mikro').style.setProperty('--gyuru', gyuru.toFixed(1) + 'px');
+  };
+  hangBe.createMediaStreamSource(mikroFolyam).connect(dolgozo);
+  $('#mikro').classList.add('hangos');
+}
+
+function mikrofonAllj(){
+  if (mikroFolyam) mikroFolyam.getTracks().forEach(t => t.stop());
+  if (hangBe) hangBe.close();
+  mikroFolyam = hangBe = dolgozo = null;
+  $('#mikro').classList.remove('hangos');
+  $('#mikro').style.removeProperty('--gyuru');
+}
+
+function hangLejatszas(bajtok){
+  if (!hangKi) hangKi = new AudioContext({sampleRate: HZ});
+  const minta = new Int16Array(bajtok);
+  const puffer = hangKi.createBuffer(1, minta.length, HZ);
+  const cs = puffer.getChannelData(0);
+  for (let i = 0; i < minta.length; i++) cs[i] = minta[i] / 32768;
+  const forras = hangKi.createBufferSource();
+  forras.buffer = puffer;
+  forras.connect(hangKi.destination);
+  const most = hangKi.currentTime;
+  jatszoIdo = Math.max(jatszoIdo, most + 0.04);
+  forras.start(jatszoIdo);
+  jatszoIdo += puffer.duration;
+  allapot('beszel');
+  clearTimeout(hangLejatszas.idozito);
+  hangLejatszas.idozito = setTimeout(
+    () => allapot('kesz'), (jatszoIdo - most) * 1000 + 220);
+}
+
+/* ── kapcsolat ────────────────────────────────────────── */
+async function kapcsolodik(){
+  let wsPort;
+  try {
+    wsPort = (await (await fetch('/beallitas.json')).json()).ws_port;
+  } catch { rendszer('Nem érem el a szervert.', true); return; }
+  ws = new WebSocket(`ws://${location.hostname}:${wsPort}`);
+  ws.binaryType = 'arraybuffer';
+
+  ws.onmessage = e => {
+    if (e.data instanceof ArrayBuffer) return hangLejatszas(e.data);
+    const u = JSON.parse(e.data);
+
+    if (u.type === 'kapcsolodva'){
+      allapot('kesz');
+      $('#proba-jel').hidden = !u.proba;
+      if (u.proba) rendszer('Próba mód — a valódi kosár nem változik.');
+    }
+    else if (u.type === 'allapot') allapot(u.allapot);
+    else if (u.type === 'user_text'){ aiBuborek = null; uzenet('te', u.text); }
+    else if (u.type === 'ai_delta'){
+      if (!aiBuborek) aiBuborek = uzenet('ai', '');
+      aiBuborek.textContent += u.text; gorget();
+    }
+    else if (u.type === 'ai_text'){
+      if (aiBuborek) aiBuborek.textContent = u.text; else uzenet('ai', u.text);
+      aiBuborek = null;
+    }
+    else if (u.type === 'tool_start'){
+      if (u.name === 'termek_keres') rendszer('keresés: ' + (u.args.termek||''));
+    }
+    else if (u.type === 'tool_done') eszkozEredmeny(u.name, u.result);
+    else if (u.type === 'hiba') rendszer(u.text, true);
+  };
+
+  ws.onclose = () => { allapot('varakozik');
+                       rendszer('A kapcsolat megszakadt. Frissítsd az oldalt.', true); };
+  ws.onerror = () => allapot('varakozik');
+}
+
+function eszkozEredmeny(nev, e){
+  if (!e) return;
+  if (e.hiba) return rendszer(e.hiba, true);
+
+  if (nev === 'termek_keres' && e.talalatok)
+    talalatok(e.kereses, e.talalatok);
+  else if (nev === 'akciok_most' && e.termekek)
+    talalatok('akciók', e.termekek);
+  else if (['kosar_megmutat','kosar_osszeg','kosar_lezar',
+            'kosarba_tesz','kosarbol_kivesz'].includes(nev)){
+    if (e.kosar) kosarKirajzol(e.kosar, e.osszeg_ft, e.rendelheto);
+    else if (ws && ws.readyState === 1)
+      ws.send(JSON.stringify({type:'kosar_frissit'}));
+  }
+}
+
+/* ── kezelők ──────────────────────────────────────────── */
+$('#inditas').onclick = async () => {
+  try {
+    await mikrofonIndit();
+    $('#mikro').dataset.be = '1';
+    $('#sugo').textContent = 'Beszélj — nem kell gombot nyomni.';
+    $('#fedo').classList.add('el');
+    kapcsolodik();
+  } catch (e) {
+    const baj = $('#fedo-baj');
+    baj.textContent = 'A mikrofon nem érhető el: ' + e.message +
+      ' — a felület mikrofon nélkül is használható, gépelve.';
+    baj.hidden = false;
+    $('#fedo').classList.add('el');
+    $('#sugo').textContent = 'Mikrofon nélkül — írd be, mire van szükséged.';
+    kapcsolodik();
+  }
+};
+
+$('#mikro').onclick = async () => {
+  const gomb = $('#mikro');
+  if (gomb.dataset.be === '1'){ mikrofonAllj(); gomb.dataset.be = '0';
+    $('#sugo').textContent = 'A mikrofon ki van kapcsolva.'; }
+  else {
+    try { await mikrofonIndit(); gomb.dataset.be = '1';
+      $('#sugo').textContent = 'Beszélj — nem kell gombot nyomni.'; }
+    catch(e){ $('#sugo').textContent = 'A mikrofon nem érhető el.'; }
+  }
+};
+
+$('#gepeles').onkeydown = e => {
+  if (e.key !== 'Enter') return;
+  const szoveg = e.target.value.trim();
+  if (!szoveg || !ws || ws.readyState !== 1) return;
+  uzenet('te', szoveg);
+  ws.send(JSON.stringify({type:'szoveg', text:szoveg}));
+  e.target.value = '';
+  aiBuborek = null;
+};
+</script>
+</body>
+</html>

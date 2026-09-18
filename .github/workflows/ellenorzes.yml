@@ -1,0 +1,35 @@
+name: Ellenőrzés
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  szintaxis:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.9", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Szintaxis
+        run: python -m compileall -q .
+
+      - name: Titkok nem szivárogtak-e ki
+        run: |
+          if grep -rInE "sk-[A-Za-z0-9_-]{20,}|ROHLIK_PASSWORD=.+" \
+               --include="*.py" --include="*.md" --include="*.html" .; then
+            echo "::error::Titoknak tűnő tartalom a repóban"
+            exit 1
+          fi
+          test ! -f .env || (echo "::error::.env bekerült a repóba" && exit 1)
+
+      - name: Modulok importálhatók
+        run: |
+          pip install -q -r requirements.txt
+          python -c "import parser, arak, adat, motor, mcp_kliens"
