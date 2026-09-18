@@ -221,7 +221,7 @@ TIPUSOK = {".html": "text/html; charset=utf-8",
            ".ico": "image/x-icon"}
 
 
-def statikus_szerver(port, ws_port):
+def statikus_szerver(port, ws_port, cim="127.0.0.1"):
     """
     Egyszeru HTTP szerver a felulet fajljainak, sajat szalon.
 
@@ -268,13 +268,14 @@ def statikus_szerver(port, ws_port):
             self.end_headers()
             self.wfile.write(test)
 
-    kiszolgalo = ThreadingHTTPServer(("127.0.0.1", port), Kezelo)
+    kiszolgalo = ThreadingHTTPServer((cim, port), Kezelo)
     szal = threading.Thread(target=kiszolgalo.serve_forever, daemon=True)
     szal.start()
     return kiszolgalo
 
 
-async def szerver(asszisztens, beallitasok, ws_port):
+async def szerver(asszisztens, beallitasok, ws_port,
+                  cim="127.0.0.1"):
     import websockets
 
     async def kezelo(ws):
@@ -286,7 +287,7 @@ async def szerver(asszisztens, beallitasok, ws_port):
             except Exception:
                 pass
 
-    async with websockets.serve(kezelo, "127.0.0.1", ws_port, max_size=None):
+    async with websockets.serve(kezelo, cim, ws_port, max_size=None):
         await asyncio.Future()
 
 
@@ -298,6 +299,9 @@ def main():
     a.add_argument("--hang", help="melyik hang")
     a.add_argument("--nyitas-nelkul", action="store_true",
                    help="ne nyissa meg automatikusan a bongeszot")
+    a.add_argument("--cim", default="127.0.0.1",
+                   help="melyik cimen figyeljen; szerveren/konteneren "
+                        "0.0.0.0 kell (alap: csak helyben)")
     a.add_argument("--db", default="kifli.db")
     args = a.parse_args()
 
@@ -332,7 +336,13 @@ def main():
 
     tarolo = adat.Tarolo(args.db)
     print(f"\n{F}{SZ}  Kifli asszisztens{ALAP}")
-    print(f"{HA}  {cim}{'  (proba)' if args.proba else ''}{ALAP}")
+    if args.cim not in ("127.0.0.1", "localhost"):
+        print(f"{HA}  {args.cim}:{port} (minden interfeszen)"
+              f"{'  (proba)' if args.proba else ''}{ALAP}")
+        print(f"{S}  Figyelem: a mikrofon csak HTTPS-en vagy localhoston "
+              f"mukodik.{ALAP}")
+    else:
+        print(f"{HA}  {cim}{'  (proba)' if args.proba else ''}{ALAP}")
     print(f"\n{HA}  Telefonrol (HTTPS kell a mikrofonhoz):{ALAP}")
     print(f"    {SZ}tailscale serve --bg {port}{ALAP}")
     print(f"    {SZ}tailscale serve --bg --set-path=/ws {ws_port}{ALAP}")
@@ -341,11 +351,12 @@ def main():
 
     with MCPKliens() as mcp:
         asszisztens = asz.Asszisztens(mcp, tarolo, args.proba)
-        kiszolgalo = statikus_szerver(port, ws_port)
+        kiszolgalo = statikus_szerver(port, ws_port, args.cim)
         if not args.nyitas_nelkul:
             threading.Timer(1.0, lambda: webbrowser.open(cim)).start()
         try:
-            asyncio.run(szerver(asszisztens, beallitasok, ws_port))
+            asyncio.run(szerver(asszisztens, beallitasok, ws_port,
+                                args.cim))
         except KeyboardInterrupt:
             print(f"{HA}Viszlat.{ALAP}")
         finally:

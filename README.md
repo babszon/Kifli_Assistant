@@ -197,6 +197,20 @@ köthető, akkor a Siri sem kell.
 Aki inkább egyetlen gyors felvételt akar Siri-vel, beszélgetés nélkül,
 annak ott a [kisebb API](docs/siri.md) (`api.py`).
 
+### Szerveren, hogy mindig menjen
+
+A gépednek nem kell ébren lennie. Synology NAS-on, VPS-en vagy bármilyen
+x86 gépen egy paranccsal elindul:
+
+```bash
+docker compose up -d --build
+```
+
+A hangot továbbra is a böngésződ veszi — a szervernek nem kell
+hangkártya. Csak a logika fut ott, mindig.
+
+**[Lépésről lépésre: NAS beállítása →](docs/nas.md)**
+
 ### Két változat, egy kódbázis
 
 |  | Grafikus | Terminálos | Telefonos |
@@ -258,6 +272,7 @@ Az API kulcs a Python oldalon marad, nem kerül ki a böngészőbe.
 | `adat.py` | tanulás (SQLite) és Home Assistant |
 | `llm.py` | a magyar szöveg normalizálása |
 | `szinkron.py` | listából kosár, beszélgetés nélkül |
+| `Dockerfile` | szerveres futtatás (NAS, VPS) |
 
 </details>
 

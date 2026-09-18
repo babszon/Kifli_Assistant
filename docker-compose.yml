@@ -1,0 +1,29 @@
+services:
+  kifli:
+    build: .
+    image: kifli-asszisztens
+    container_name: kifli
+    restart: unless-stopped
+
+    ports:
+      - "8420:8420"     # a felület
+      - "8421:8421"     # a hangkapcsolat
+
+    volumes:
+      # A beállítások és a megtanult termékek a NAS-on maradnak,
+      # így a konténer bármikor újraépíthető.
+      - ./adat:/app/adat
+      - ./.env:/app/.env:ro
+
+    environment:
+      - TZ=Europe/Budapest
+      - PYTHONUNBUFFERED=1
+
+    # A DS216+II-n a memória szűkös lehet, ha sok minden fut mellette
+    mem_limit: 512m
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"

@@ -1,0 +1,10 @@
+.env
+.venv/
+*.db
+__pycache__/
+*.py[cod]
+.git/
+.github/
+docs/
+*.md
+!normalizalo_prompt.md
