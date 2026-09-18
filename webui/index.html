@@ -438,12 +438,25 @@ function hangLejatszas(bajtok){
 }
 
 /* ── kapcsolat ────────────────────────────────────────── */
+async function ws_cim(){
+  // HTTPS mögött (Tailscale, reverse proxy) a WebSocket ugyanazon a
+  // címen megy, /ws útvonalon - külön port nem járható, mert a proxy
+  // csak a 443-at teszi ki. Helyben viszont közvetlenül a WS portra.
+  if (location.protocol === 'https:') return `wss://${location.host}/ws`;
+  const v = await fetch('/beallitas.json');
+  if (!v.ok) throw new Error('beallitas.json: ' + v.status);
+  return `ws://${location.hostname}:${(await v.json()).ws_port}`;
+}
+
 async function kapcsolodik(){
-  let wsPort;
-  try {
-    wsPort = (await (await fetch('/beallitas.json')).json()).ws_port;
-  } catch { rendszer('Nem érem el a szervert.', true); return; }
-  ws = new WebSocket(`ws://${location.hostname}:${wsPort}`);
+  let cim;
+  try { cim = await ws_cim(); }
+  catch (e) {
+    rendszer('Nem érem el a szervert: ' + e.message +
+             ' — fut-e a gui.py?', true);
+    return;
+  }
+  ws = new WebSocket(cim);
   ws.binaryType = 'arraybuffer';
 
   ws.onmessage = e => {

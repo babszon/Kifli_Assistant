@@ -333,7 +333,11 @@ def main():
     tarolo = adat.Tarolo(args.db)
     print(f"\n{F}{SZ}  Kifli asszisztens{ALAP}")
     print(f"{HA}  {cim}{'  (proba)' if args.proba else ''}{ALAP}")
-    print(f"{HA}  Leallitas: Ctrl+C{ALAP}\n")
+    print(f"\n{HA}  Telefonrol (HTTPS kell a mikrofonhoz):{ALAP}")
+    print(f"    {SZ}tailscale serve --bg {port}{ALAP}")
+    print(f"    {SZ}tailscale serve --bg --set-path=/ws {ws_port}{ALAP}")
+    print(f"{HA}  Mindketto kell - a masodik a hangkapcsolat.{ALAP}")
+    print(f"\n{HA}  Leallitas: Ctrl+C{ALAP}\n")
 
     with MCPKliens() as mcp:
         asszisztens = asz.Asszisztens(mcp, tarolo, args.proba)

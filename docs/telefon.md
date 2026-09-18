@@ -54,14 +54,33 @@ source .venv/bin/activate
 python3 gui.py --nyitas-nelkul
 ```
 
-Jegyezd fel, melyik portot írja ki (például `8420`). Aztán egy másik
-ablakban:
+A `gui.py` kiírja, melyik két portot használja, és a pontos parancsokat
+is. Egy másik ablakban futtasd le **mind a kettőt**:
 
 ```bash
-tailscale serve --bg 8420
+tailscale serve --bg 8420                      # a felület
+tailscale serve --bg --set-path=/ws 8421       # a hangkapcsolat
 ```
 
-Ez ad egy HTTPS címet, valami ilyet:
+> A második nélkül a lap betöltődik, de a hang nem indul el. A
+> WebSocket külön porton fut, és a Tailscale csak azt proxyzza, amit
+> megadsz neki.
+
+Ellenőrzés:
+
+```bash
+tailscale serve status
+```
+
+Mindkettőnek szerepelnie kell:
+
+```
+https://macbook-air-2.tailcb2b54.ts.net (tailnet only)
+|-- /    proxy http://127.0.0.1:8420
+|-- /ws  proxy http://127.0.0.1:8421
+```
+
+A cím valami ilyen lesz:
 
 ```
 https://macbook-air.farkas-tail1234.ts.net/
@@ -167,7 +186,9 @@ máshol is.
 |:--|:--|
 | „A mikrofon nem indult el" | HTTPS-en vagy-e? `http://`-n a Safari nem engedi |
 | Mindig koppintani kell | Tedd a kezdőképernyőre, és onnan indítsd |
-| Nem éri el a szervert | Fut-e a `gui.py`; be van-e kapcsolva a Tailscale a telefonon |
+| „Nem érem el a szervert" | Fut-e a `gui.py`; be van-e kapcsolva a Tailscale a telefonon |
+| Betölt, de nem hall | Hiányzik a `--set-path=/ws` serve. Nézd meg: `tailscale serve status` |
+| Újraindítás után nem megy | A `gui.py` más portot kapott. Indítsd fix porton: `python3 gui.py --port 8420` |
 | Elalszik a képernyő | Az ébrentartás csak akkor él, ha a lap előtérben van |
 | Siri nem ismeri fel | Adj a parancsnak rövid, egyszerű nevet — a `Kifli` jó |
 | Visszhangzik | Fejhallgatóval biztosan nem; hangszóróval a böngésző
