@@ -240,9 +240,17 @@ def statikus_szerver(port, ws_port, cim="127.0.0.1"):
             ut = self.path.split("?", 1)[0].split("#", 1)[0]
 
             if ut == "/beallitas.json":
-                return self._kuld(
-                    200, "application/json",
-                    json.dumps({"ws_port": ws_port}).encode())
+                # HTTPS mogott (forditott proxy) a WebSocket masik
+                # porton vagy masik utvonalon lehet - a .env mondja meg
+                beall = {"ws_port": ws_port}
+                kulso = os.environ.get("WS_KULSO_PORT")
+                if kulso:
+                    beall["ws_kulso_port"] = int(kulso)
+                utvonal = os.environ.get("WS_UTVONAL")
+                if utvonal:
+                    beall["ws_utvonal"] = utvonal
+                return self._kuld(200, "application/json",
+                                  json.dumps(beall).encode())
 
             if ut in ("/", ""):
                 # Telefonon a mobil feluletet adjuk, gepen az asztalit

@@ -18,6 +18,10 @@ services:
     environment:
       - TZ=Europe/Budapest
       - PYTHONUNBUFFERED=1
+      # HTTPS mögött: melyik porton éri el kívülről a böngésző a
+      # hangkapcsolatot. A .env-ből is jöhet.
+      - WS_KULSO_PORT=${WS_KULSO_PORT:-}
+      - WS_UTVONAL=${WS_UTVONAL:-}
 
     # A DS216+II-n a memória szűkös lehet, ha sok minden fut mellette
     mem_limit: 512m

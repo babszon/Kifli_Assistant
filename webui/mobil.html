@@ -291,13 +291,18 @@ function lejatszik(bajtok){
 
 /* ── kapcsolat ── */
 async function ws_cim(){
-  // HTTPS mögött (Tailscale, reverse proxy) a WebSocket ugyanazon a
-  // címen megy, /ws útvonalon - külön port nem járható, mert a proxy
-  // csak a 443-at teszi ki. Helyben viszont közvetlenül a WS portra.
-  if (location.protocol === 'https:') return `wss://${location.host}/ws`;
+  // A szerver megmondja, hol keresse a hangkapcsolatot. HTTPS mögött
+  // (Synology fordított proxy, Tailscale) ez lehet külön port vagy
+  // külön útvonal ugyanazon a néven - a .env állítja be.
   const v = await fetch('/beallitas.json');
   if (!v.ok) throw new Error('beallitas.json: ' + v.status);
-  return `ws://${location.hostname}:${(await v.json()).ws_port}`;
+  const b = await v.json();
+
+  if (location.protocol === 'https:'){
+    if (b.ws_kulso_port) return `wss://${location.hostname}:${b.ws_kulso_port}`;
+    return `wss://${location.host}${b.ws_utvonal || '/ws'}`;
+  }
+  return `ws://${location.hostname}:${b.ws_port}`;
 }
 
 async function kapcsolodik(){

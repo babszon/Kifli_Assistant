@@ -128,27 +128,59 @@ Két szabály kell.
 
 **Második — a hangkapcsolat:**
 
-Ugyanaz, de a **Cél port** `8421`, és az **Egyéni fejléc** fülön
-kapcsold be a **WebSocket** előbeállítást.
+A DSM egy gazdanév + port párosra csak **egy** szabályt enged, ezért a
+hangkapcsolat másik portra kerül:
+
+| Mező | Érték |
+|:--|:--|
+| Leírás | `Kifli hang` |
+| Forrás gazdanév | `kifli.valami.synology.me` |
+| Forrás port | **`9080`** (vagy bármelyik szabad) |
+| Cél port | `8421` |
+
+Az **Egyéni fejléc** fülön itt is kapcsold be a **WebSocket**
+előbeállítást.
 
 > A WebSocket fejlécek nélkül a lap betöltődik, de a hang nem indul el.
 > Ez a leggyakoribb hiba.
 
-Ha külön aldomaint nem akarsz, egyetlen szabály is elég, ha a
-`/ws` útvonalat a 8421-re irányítod — a DSM újabb verziói tudnak
-útvonal-alapú szabályt.
+Végül mondd meg a programnak, melyik ez a port. A `.env`-be:
+
+```
+WS_KULSO_PORT=9080
+```
+
+Aztán `docker compose restart`.
+
+<details>
+<summary><b>Szabad port keresése</b></summary>
+
+<br>
+
+```bash
+sudo netstat -tlnp | grep -E ":(9080|9443|8450)"
+```
+
+Ami nem jön vissza, az szabad. A 8443-at a DSM használja.
+
+</details>
 
 ### B) Tailscale-lel
 
 Ha nem akarsz a DSM-mel bajlódni, vagy nincs DDNS-ed:
 
 ```bash
-sudo docker compose exec kifli true   # fut-e egyáltalán
-tailscale serve --bg 8420
-tailscale serve --bg --set-path=/ws 8421
+sudo tailscale serve --bg 8420
+sudo tailscale serve --bg --set-path=/ws 8421
 ```
 
-A Tailscale a Synology Csomagkezelőjéből is telepíthető.
+Ilyenkor a `.env`-be ez kerül:
+
+```
+WS_UTVONAL=/ws
+```
+
+A Tailscale a Synology Csomagkezelőjéből telepíthető.
 
 ---
 
@@ -189,7 +221,7 @@ konténeren — újraépítésnél megmaradnak.
 | A konténer újraindulgat | `docker compose logs` — általában hiányzó `.env` |
 | „Nincs jogosultság" a naplóban | Rossz OpenAI kulcs vagy Kifli jelszó |
 | A lap nem jön be | Nyitva van-e a 8420-as port a NAS tűzfalán |
-| Betölt, de nem hall | Hiányzik a WebSocket-szabály a 8421-re |
+| Betölt, de nem hall | Hiányzik a második proxy-szabály, vagy a `WS_KULSO_PORT` a `.env`-ből |
 | „A mikrofon nem indult el" | HTTP-n vagy. HTTPS kell |
 | Kevés a memória | `mem_limit` emelése a `docker-compose.yml`-ben |
 
