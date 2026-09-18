@@ -1,0 +1,16 @@
+{
+  "name": "Kifli asszisztens",
+  "short_name": "Kifli",
+  "description": "Hangvezérelt bevásárló asszisztens a Kifli.hu-hoz",
+  "start_url": "/mobil.html",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#132B52",
+  "theme_color": "#132B52",
+  "lang": "hu",
+  "icons": [
+    { "src": "/ikon.svg", "sizes": "any", "type": "image/svg+xml",
+      "purpose": "any" }
+  ]
+}

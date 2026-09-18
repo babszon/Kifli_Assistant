@@ -212,6 +212,8 @@ class Hid:
 
 
 TIPUSOK = {".html": "text/html; charset=utf-8",
+           ".json": "application/json; charset=utf-8",
+           ".webmanifest": "application/manifest+json",
            ".js": "text/javascript; charset=utf-8",
            ".css": "text/css; charset=utf-8",
            ".svg": "image/svg+xml",
@@ -242,8 +244,14 @@ def statikus_szerver(port, ws_port):
                     200, "application/json",
                     json.dumps({"ws_port": ws_port}).encode())
 
-            fajl = (WEBUI / ("index.html" if ut in ("/", "")
-                             else ut.lstrip("/"))).resolve()
+            if ut in ("/", ""):
+                # Telefonon a mobil feluletet adjuk, gepen az asztalit
+                ua = (self.headers.get("User-Agent") or "").lower()
+                mobil = any(j in ua for j in
+                            ("iphone", "ipod", "android", "ipad"))
+                ut = "/mobil.html" if mobil else "/index.html"
+
+            fajl = (WEBUI / ut.lstrip("/")).resolve()
             if (not str(fajl).startswith(str(WEBUI.resolve()))
                     or not fajl.is_file()):
                 return self._kuld(404, "text/plain; charset=utf-8",

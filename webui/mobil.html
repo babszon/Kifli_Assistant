@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Kifli">
+<meta name="theme-color" content="#132B52">
+<link rel="manifest" href="/manifest.json">
+<title>Kifli</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500&family=IBM+Plex+Sans:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --kobalt:#132B52; --felulet:#1B3A6B; --krem:#F6F3E9; --halvany:#7E96BC;
+  --pipacs:#C8322B; --zold:#7FB069; --arany:#D9A441;
+  --vonal:rgba(246,243,233,.14);
+  --beszed:'Fraunces',Georgia,serif;
+  --ui:'IBM Plex Sans',-apple-system,BlinkMacSystemFont,sans-serif;
+  --fent:env(safe-area-inset-top); --lent:env(safe-area-inset-bottom);
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overscroll-behavior:none}
+body{
+  background:var(--kobalt);color:var(--krem);font-family:var(--ui);
+  font-size:17px;line-height:1.5;-webkit-font-smoothing:antialiased;
+  overflow:hidden;user-select:none;
+}
+
+/* ── indítófelület: az EGÉSZ képernyő a gomb ── */
+#kapu{
+  position:fixed;inset:0;z-index:20;background:var(--kobalt);
+  display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:26px;padding:40px 30px;text-align:center;
+  padding-top:calc(40px + var(--fent));
+}
+#kapu.el{display:none}
+#kapu h1{
+  font-family:var(--beszed);font-size:30px;font-weight:400;
+  font-variation-settings:'opsz' 90;
+}
+#kapu p{color:var(--halvany);font-size:16px;max-width:26ch}
+.nagygomb{
+  width:170px;height:170px;border-radius:50%;background:var(--pipacs);
+  display:grid;place-items:center;animation:hivogat 2.4s ease-in-out infinite;
+}
+.nagygomb svg{width:62px;height:62px}
+@keyframes hivogat{
+  0%,100%{box-shadow:0 0 0 0 rgba(200,50,43,.42)}
+  70%{box-shadow:0 0 0 34px rgba(200,50,43,0)}
+}
+#kapu .baj{color:#F09B95;font-size:14px;max-width:30ch}
+
+/* ── fő nézet ── */
+.keret{display:flex;flex-direction:column;height:100%;
+       padding-top:var(--fent);padding-bottom:var(--lent)}
+.fej{
+  display:flex;align-items:center;gap:10px;padding:12px 18px;
+  border-bottom:1px solid var(--vonal);flex:none;
+}
+.fej .nev{font-family:var(--beszed);font-size:16px}
+.fej .allapot{margin-left:auto;display:flex;align-items:center;gap:7px;
+              font-size:13px;color:var(--halvany)}
+.pont{width:8px;height:8px;border-radius:50%;background:var(--halvany)}
+[data-a="hallgat"] .pont{background:var(--pipacs);animation:lüktet 1.1s infinite}
+[data-a="gondolkodik"] .pont{background:var(--arany)}
+[data-a="beszel"] .pont,[data-a="kesz"] .pont{background:var(--zold)}
+@keyframes lüktet{0%,100%{opacity:1}50%{opacity:.25}}
+
+.folyam{flex:1;overflow-y:auto;padding:18px;display:flex;
+        flex-direction:column;gap:18px;-webkit-overflow-scrolling:touch}
+.uzenet{max-width:92%}
+.uzenet .ki{font-size:11.5px;color:var(--halvany);margin-bottom:4px}
+.te{align-self:flex-end}
+.te .szoveg{background:var(--felulet);padding:10px 14px;
+            border-radius:15px 15px 4px 15px;font-size:16px}
+.ai .szoveg{font-family:var(--beszed);font-size:19px;line-height:1.45;
+            font-variation-settings:'opsz' 24}
+.rendszer{font-size:13px;color:var(--halvany)}
+.rendszer.baj{color:#F09B95}
+
+/* ── kosársáv ── */
+.kosarsav{
+  flex:none;border-top:1px solid var(--vonal);background:rgba(0,0,0,.2);
+}
+.kosarsav summary{
+  display:flex;align-items:baseline;gap:10px;padding:13px 18px;
+  list-style:none;cursor:pointer;
+}
+.kosarsav summary::-webkit-details-marker{display:none}
+.kosarsav summary .cim{font-family:var(--beszed);font-size:15px}
+.kosarsav summary .db{font-size:12.5px;color:var(--halvany)}
+.kosarsav summary .ossz{margin-left:auto;font-family:var(--beszed);
+                        font-size:18px;font-variant-numeric:tabular-nums}
+.kosarsav .lista{max-height:38vh;overflow-y:auto;padding:0 18px 12px}
+.ktetel{display:grid;grid-template-columns:auto 1fr auto;gap:10px;
+        padding:8px 0;font-size:14px;align-items:baseline;
+        border-top:1px solid var(--vonal)}
+.ktetel .db{color:var(--halvany);font-size:13px;
+            font-variant-numeric:tabular-nums}
+.ktetel .ar{font-variant-numeric:tabular-nums;white-space:nowrap}
+.intes{margin:0 18px 12px;padding:9px 12px;border-radius:7px;font-size:12.5px;
+       background:rgba(217,164,65,.14);color:var(--arany)}
+
+/* ── alsó sáv ── */
+.also{display:flex;align-items:center;gap:14px;padding:12px 18px 16px;
+      border-top:1px solid var(--vonal);flex:none}
+.mikro{width:58px;height:58px;flex:none;border-radius:50%;
+       background:var(--felulet);display:grid;place-items:center;
+       border:none;transition:background .2s}
+.mikro svg{width:24px;height:24px}
+.mikro[data-be="1"]{background:var(--pipacs)}
+.sugo{flex:1;font-size:14px;color:var(--halvany)}
+.kesz-gomb{padding:11px 18px;background:var(--krem);color:var(--kobalt);
+           border:none;border-radius:8px;font:inherit;font-size:15px;
+           font-weight:500}
+
+@media(prefers-reduced-motion:reduce){*{animation:none!important}}
+</style>
+</head>
+<body>
+
+<div id="kapu">
+  <h1>Kifli</h1>
+  <p id="kapu-szoveg">Egy koppintás, és beszélhetsz.</p>
+  <div class="nagygomb">
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="9" y="3" width="6" height="11" rx="3" stroke="#F6F3E9" stroke-width="1.6"/>
+      <path d="M5 11a7 7 0 0 0 14 0M12 18v3" stroke="#F6F3E9"
+            stroke-width="1.6" stroke-linecap="round"/>
+    </svg>
+  </div>
+  <div class="baj" id="kapu-baj" hidden></div>
+</div>
+
+<div class="keret">
+  <header class="fej" id="fej" data-a="varakozik">
+    <svg width="18" height="18" viewBox="0 0 70 66" aria-hidden="true">
+      <path d="M8 60 C2 26 26 2 64 6 C58 16 46 20 34 28 C22 36 16 48 8 60 Z"
+            fill="#D9A441"/>
+    </svg>
+    <span class="nev">Kifli</span>
+    <span class="allapot"><span class="pont"></span><span id="allapot-szo">…</span></span>
+  </header>
+
+  <div class="folyam" id="folyam" role="log" aria-live="polite"></div>
+
+  <details class="kosarsav" id="kosarsav" hidden>
+    <summary>
+      <span class="cim">Kosár</span>
+      <span class="db" id="kosar-db"></span>
+      <span class="ossz" id="kosar-ossz"></span>
+    </summary>
+    <div class="intes" id="intes" hidden></div>
+    <div class="lista" id="kosar-lista"></div>
+  </details>
+
+  <div class="also">
+    <button class="mikro" id="mikro" data-be="0" aria-label="Mikrofon">
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <rect x="9" y="3" width="6" height="11" rx="3" stroke="#F6F3E9" stroke-width="1.7"/>
+        <path d="M5 11a7 7 0 0 0 14 0M12 18v3" stroke="#F6F3E9"
+              stroke-width="1.7" stroke-linecap="round"/>
+      </svg>
+    </button>
+    <span class="sugo" id="sugo">Beszélj</span>
+    <button class="kesz-gomb" id="kesz">Kész</button>
+  </div>
+</div>
+
+<script>
+const HZ = 24000, $ = s => document.querySelector(s);
+let ws, hangBe, hangKi, folyamMikro, jatszoIdo = 0, aiBuborek = null;
+let latott = new Set(), ebren = null;
+
+/* ── megjelenítés ── */
+const folyam = $('#folyam');
+const gorget = () => folyam.scrollTop = folyam.scrollHeight;
+
+function uzenet(ki, szoveg){
+  const d = document.createElement('div');
+  d.className = 'uzenet ' + (ki === 'te' ? 'te' : 'ai');
+  d.innerHTML = `<div class="ki">${ki === 'te' ? 'te' : 'asszisztens'}</div>
+                 <div class="szoveg"></div>`;
+  d.querySelector('.szoveg').textContent = szoveg;
+  folyam.appendChild(d); gorget();
+  return d.querySelector('.szoveg');
+}
+function rendszer(sz, baj){
+  const d = document.createElement('div');
+  d.className = 'rendszer' + (baj ? ' baj' : '');
+  d.textContent = sz; folyam.appendChild(d); gorget();
+}
+const ft = n => n == null ? '' :
+  Math.round(n).toLocaleString('hu-HU').replace(/,/g,' ') + ' Ft';
+
+function allapot(a){
+  const sz = {varakozik:'kapcsolódás', kesz:'kész', hallgat:'hallgat',
+              gondolkodik:'keres', beszel:'beszél'};
+  $('#fej').dataset.a = a;
+  $('#allapot-szo').textContent = sz[a] || a;
+}
+
+function kosar(lista, osszeg, rendelheto){
+  const sav = $('#kosarsav');
+  if (!lista || !lista.length){ sav.hidden = true; latott.clear(); return; }
+  sav.hidden = false;
+  const el = $('#kosar-lista'); el.innerHTML = '';
+  let db = 0;
+  for (const t of lista){
+    db += (t.darab || 1);
+    const d = document.createElement('div');
+    d.className = 'ktetel';
+    d.innerHTML = `<span class="db">${t.darab || 1}×</span>
+                   <span>${esc(t.nev)}</span>
+                   <span class="ar">${ft(t.ar)}</span>`;
+    el.appendChild(d);
+  }
+  $('#kosar-db').textContent = db + ' tétel';
+  $('#kosar-ossz').textContent = ft(osszeg);
+  const i = $('#intes');
+  if (rendelheto === false){
+    i.textContent = 'Még nincs meg a minimális rendelési érték.';
+    i.hidden = false;
+  } else i.hidden = true;
+}
+function esc(s){ const d = document.createElement('div');
+  d.textContent = s == null ? '' : String(s); return d.innerHTML; }
+
+/* ── hang ── */
+const ROGZITO = `
+class R extends AudioWorkletProcessor{
+  process(b){ const c = b[0] && b[0][0]; if(!c) return true;
+    const k = new Int16Array(c.length);
+    for(let i=0;i<c.length;i++){ const m=Math.max(-1,Math.min(1,c[i]));
+      k[i]= m<0 ? m*0x8000 : m*0x7FFF; }
+    this.port.postMessage(k.buffer,[k.buffer]); return true; }
+}
+registerProcessor('r', R);`;
+
+async function mikrofonIndit(){
+  folyamMikro = await navigator.mediaDevices.getUserMedia({
+    audio:{ echoCancellation:true, noiseSuppression:true,
+            autoGainControl:true, channelCount:1 }});
+  hangBe = new AudioContext({sampleRate: HZ});
+  if (hangBe.state === 'suspended') await hangBe.resume();
+  const u = URL.createObjectURL(new Blob([ROGZITO],
+                                {type:'application/javascript'}));
+  await hangBe.audioWorklet.addModule(u); URL.revokeObjectURL(u);
+  const n = new AudioWorkletNode(hangBe, 'r');
+  n.port.onmessage = e => { if (ws && ws.readyState === 1) ws.send(e.data); };
+  hangBe.createMediaStreamSource(folyamMikro).connect(n);
+
+  hangKi = new AudioContext({sampleRate: HZ});
+  if (hangKi.state === 'suspended') await hangKi.resume();
+  // néma keret: feloldja a lejátszást iOS-en
+  const n0 = hangKi.createBuffer(1, 1, HZ);
+  const f0 = hangKi.createBufferSource();
+  f0.buffer = n0; f0.connect(hangKi.destination); f0.start();
+
+  $('#mikro').dataset.be = '1';
+  $('#sugo').textContent = 'Beszélj';
+}
+
+function mikrofonAllj(){
+  if (folyamMikro) folyamMikro.getTracks().forEach(t => t.stop());
+  if (hangBe) hangBe.close();
+  folyamMikro = hangBe = null;
+  $('#mikro').dataset.be = '0';
+  $('#sugo').textContent = 'Mikrofon kikapcsolva';
+}
+
+function lejatszik(bajtok){
+  if (!hangKi) return;
+  const m = new Int16Array(bajtok);
+  const p = hangKi.createBuffer(1, m.length, HZ);
+  const c = p.getChannelData(0);
+  for (let i = 0; i < m.length; i++) c[i] = m[i] / 32768;
+  const f = hangKi.createBufferSource();
+  f.buffer = p; f.connect(hangKi.destination);
+  const most = hangKi.currentTime;
+  jatszoIdo = Math.max(jatszoIdo, most + .05);
+  f.start(jatszoIdo); jatszoIdo += p.duration;
+  allapot('beszel');
+  clearTimeout(lejatszik.i);
+  lejatszik.i = setTimeout(() => allapot('kesz'),
+                           (jatszoIdo - most) * 1000 + 250);
+}
+
+/* ── kapcsolat ── */
+async function kapcsolodik(){
+  let port;
+  try { port = (await (await fetch('/beallitas.json')).json()).ws_port; }
+  catch { rendszer('Nem érem el a szervert.', true); return; }
+
+  const sema = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${sema}://${location.hostname}:${port}`);
+  ws.binaryType = 'arraybuffer';
+
+  ws.onmessage = e => {
+    if (e.data instanceof ArrayBuffer) return lejatszik(e.data);
+    const u = JSON.parse(e.data);
+    if (u.type === 'kapcsolodva'){
+      allapot('kesz');
+      if (u.proba) rendszer('Próba mód — a kosár nem változik.');
+    }
+    else if (u.type === 'allapot') allapot(u.allapot);
+    else if (u.type === 'user_text'){ aiBuborek = null; uzenet('te', u.text); }
+    else if (u.type === 'ai_delta'){
+      if (!aiBuborek) aiBuborek = uzenet('ai','');
+      aiBuborek.textContent += u.text; gorget();
+    }
+    else if (u.type === 'ai_text'){
+      if (aiBuborek) aiBuborek.textContent = u.text; else uzenet('ai', u.text);
+      aiBuborek = null;
+    }
+    else if (u.type === 'tool_start' && u.name === 'termek_keres')
+      rendszer('keresés: ' + (u.args.termek || ''));
+    else if (u.type === 'tool_done'){
+      const e2 = u.result;
+      if (e2 && e2.kosar) kosar(e2.kosar, e2.osszeg_ft, e2.rendelheto);
+      else if (e2 && !e2.hiba && ['kosarba_tesz','kosarbol_kivesz']
+               .includes(u.name) && ws.readyState === 1)
+        ws.send(JSON.stringify({type:'kosar_frissit'}));
+      if (e2 && e2.hiba) rendszer(e2.hiba, true);
+    }
+    else if (u.type === 'hiba') rendszer(u.text, true);
+  };
+  ws.onclose = () => { allapot('varakozik');
+    rendszer('A kapcsolat megszakadt.', true); };
+}
+
+/* ── indulás ── */
+async function inditas(){
+  try {
+    await mikrofonIndit();
+    $('#kapu').classList.add('el');
+    await kapcsolodik();
+    ebrenTart();
+    return true;
+  } catch(e){
+    const b = $('#kapu-baj');
+    b.textContent = 'A mikrofon nem indult el: ' + e.message;
+    b.hidden = false;
+    return false;
+  }
+}
+
+async function ebrenTart(){
+  try { ebren = await navigator.wakeLock.request('screen'); } catch {}
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && !ebren) ebrenTart();
+});
+
+/* Az egész indítóképernyő a gomb */
+$('#kapu').addEventListener('click', inditas);
+$('#kapu').addEventListener('touchend', e => { e.preventDefault(); inditas(); });
+
+$('#mikro').onclick = () =>
+  $('#mikro').dataset.be === '1' ? mikrofonAllj() : mikrofonIndit();
+
+$('#kesz').onclick = () => {
+  if (ws && ws.readyState === 1)
+    ws.send(JSON.stringify({type:'szoveg', text:'Készen vagyunk, zárjuk le.'}));
+};
+
+/* Automatikus indítás: ha a mikrofon engedélye már megvan, nem kell
+   koppintani. Ez akkor működik, ha korábban engedélyezted és a
+   kezdőképernyőről nyitod. */
+(async () => {
+  try {
+    const a = await navigator.permissions.query({name:'microphone'});
+    if (a.state === 'granted') await inditas();
+    else $('#kapu-szoveg').textContent =
+      'Koppints bárhova, és beszélhetsz. Legközelebb magától indul.';
+  } catch {
+    // Safari nem ismeri a permissions API-t mikrofonra: csendben próbáljuk
+    if (window.navigator.standalone) await inditas();
+  }
+})();
+</script>
+</body>
+</html>

@@ -175,15 +175,38 @@ felület gépelve ugyanúgy működik.
 | `python3 kifli.py --felejts tej` | egy rossz tanulás törlése |
 | `python3 kifli.py --telepites` | beállítások újra |
 
+### A telefonon
+
+Ugyanaz a beszélgetés, mint a gépen — a saját hangján, a saját
+modelljével. A Siri nem érti meg, csak elindítja:
+
+```
+Te:      Hé Siri, Kifli
+Te:      Elfogyott a mosópor
+Kifli:   A Persil Color mosókapszula, 6799 forint. Betegyem?
+Te:      Inkább olcsóbbat
+Kifli:   A Tomi Power Caps, 5199 forint. Ez jó?
+```
+
+A felület telefonra alakul, kezdőképernyőre tehető, és ha az engedély
+megvan, az ikonra koppintva **azonnal hallgat**. Művelet gombra is
+köthető, akkor a Siri sem kell.
+
+**[Lépésről lépésre: telefon beállítása →](docs/telefon.md)**
+
+Aki inkább egyetlen gyors felvételt akar Siri-vel, beszélgetés nélkül,
+annak ott a [kisebb API](docs/siri.md) (`api.py`).
+
 ### Két változat, egy kódbázis
 
-|  | Grafikus | Terminálos |
-|:--|:--|:--|
-| Indítás | `kifli.py` | `kifli.py --terminal` |
-| Visszhangtörlés | **hardveres** (WebRTC) | szoftveres |
-| Hangszóróval | működik | fejhallgató ajánlott |
-| Függőség | `websockets` | + `sounddevice`, PortAudio |
-| Mire jó | napi használat | szerver, Home Assistant mellé |
+|  | Grafikus | Terminálos | Telefonos |
+|:--|:--|:--|:--|
+| Indítás | `kifli.py` | `kifli.py --terminal` | `api.py` |
+| Beszélgetés | igen | igen | egy kör |
+| Telefonról | igen, HTTPS-sel | nem | igen |
+| Visszhangtörlés | **hardveres** | szoftveres | — |
+| Függőség | `websockets` | + `sounddevice` | nincs |
+| Mire jó | mindennapi használat | szerver, Home Assistant | eszembe jutott |
 
 A böngésző ugyanazt a visszhangtörlést kapja az operációs rendszertől,
 amit a Zoom és a Meet használ. Emiatt a grafikus változatban közbe is
@@ -223,7 +246,9 @@ Az API kulcs a Python oldalon marad, nem kerül ki a böngészőbe.
 | `kifli.py` | indító |
 | `telepites.py` | telepítő varázsló |
 | `gui.py` | a grafikus felület szervere |
-| `webui/index.html` | maga a felület |
+| `api.py` | telefonos gyorsfelvétel (Siri) |
+| `webui/index.html` | az asztali felület |
+| `webui/mobil.html` | a telefonos felület |
 | `realtime.py` | hangvezérelt beszélgetés terminálban |
 | `asszisztens.py` | az eszközök és a rendszerprompt |
 | `motor.py` | OpenAI / Gemini szöveges tool calling |
