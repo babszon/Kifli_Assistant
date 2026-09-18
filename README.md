@@ -1,52 +1,114 @@
-# Kifli asszisztens
+<div align="center">
 
-Hangvezérelt bevásárló asszisztens a [Kifli.hu](https://www.kifli.hu)-hoz.
-Elmondod, mire van szükséged, ő megkeresi, kosárba teszi, és megjegyzi,
-hogy legközelebb ne kelljen újra magyaráznod.
+<img src="docs/banner.svg" alt="Kifli asszisztens" width="100%">
 
-```
-Te:  Elfogyott itthon a ketchup, kellene 20 tojás meg 4 liter kóla.
-     Mosogatógép tabletta is kell, márkás legyen.
+<br>
 
-AI:  Bement a Heinz ketchup, 570 gramm, 2249 forintért. A tojásból
-     két doboz Farm Prémium, összesen 1678 forint. A kóla most akciós,
-     a három és feles multipack 999 forint. A tablettából a Finish
-     Power All in 1 nyolcvan darabos csomagja 7039 forint — mehet?
-```
+**Beszélsz hozzá, és megtelik a kosarad.**
+Magyarul, úgy ahogy tényleg beszélsz — „harminc deka trappistát”,
+„inkább a Finish-t”, „mi a legolcsóbb márkás”.
 
-**Nem adja le a rendelést.** A kosarat összeállítja, a fizetést és az
-időpontválasztást te végzed a Kifli appban.
+<br>
+
+![Python](https://img.shields.io/badge/Python-3.9+-132B52?style=flat-square&labelColor=0F2342)
+![OpenAI Realtime](https://img.shields.io/badge/OpenAI-Realtime-132B52?style=flat-square&labelColor=0F2342)
+![Magyar](https://img.shields.io/badge/nyelv-magyar-C8322B?style=flat-square&labelColor=0F2342)
+![Licenc](https://img.shields.io/badge/licenc-MIT-7FB069?style=flat-square&labelColor=0F2342)
+
+</div>
+
+<br>
+
+> **Te:** Elfogyott itthon a ketchup, kellene 20 tojás meg 4 liter kóla.
+> Mosogatógép tabletta is kell, márkás legyen.
+>
+> **AI:** Bement a Heinz ketchup, 570 gramm, 2249 forintért. A tojásból
+> két doboz Farm Prémium, összesen 1678 forint. A kóla most akciós, a
+> három és feles multipack 999 forint. A tablettából a Finish Power
+> All in 1 nyolcvan darabos csomagja 7039 forint — mehet?
+
+Nem kell gombot nyomni, és nem kell biztatni, hogy menjen tovább.
+Elmondod, mire van szükséged, ő végigmegy rajta.
+
+<br>
+
+<div align="center">
+<img src="docs/felulet.svg" alt="A felület: balra a beszélgetés, jobbra az épülő kosár" width="100%">
+</div>
+
+<br>
 
 ---
 
 ## Mit tud
 
-- **Beszélsz vele, nem parancsolsz neki.** „Elfogyott a tejföl", „inkább
-  a Finish-t", „mi a legolcsóbb márkás" — mind érti.
-- **Magyarul, ahogy tényleg beszélsz.** A „harminc deka trappistát" 300
-  grammot jelent, a „kenyeret" kenyeret. A tárgyeset és a dekagramm
-  nem okoz gondot.
-- **Megtanulja a szokásaidat.** Ha egyszer megmondtad, hogy a „tejföl"
-  nálad a Magyar Tejföl 20%, onnantól kérdés nélkül azt teszi be.
-- **Kiszámolja a mennyiséget.** 20 tojás → 2 doboz (tízesével árulják).
-  Fél kiló darált hús → kimért áru, jelzi, hogy a végösszeg eltérhet.
-- **Figyeli az akciókat.** Megmondja, ha a szokásos terméked épp
-  kedvezményes.
-- **Ár-érték arányt elemez.** Tudja, hogy a pomace olívaolaj olcsóbb,
-  de nem ugyanaz, mint az extra szűz.
-- **Mindig visszamondja, mi került be**, névvel, kiszereléssel, árral —
-  hogy képernyő nélkül is ellenőrizhesd.
+<table>
+<tr>
+<td width="50%" valign="top">
 
-## Mit nem tud
+**Érti, ahogy beszélsz**
 
-- **Nem fizet és nem ad le rendelést.** Szándékosan. A kosarat
-  előkészíti, a többi a tiéd.
-- **Nem lát termékleírást.** A Kifli keresője nem adja vissza, így a
-  minőségi különbségeket a termék nevéből olvassa ki.
-- **Autóban visszhangozhat.** A grafikus felület a böngésző
-  visszhangtörlését használja, ami a legtöbb helyzetet megoldja. Az
-  autóban viszont erős a hangszóró és a mikrofon közti csatolás — ott
-  fejhallgató vagy telefonos használat a járható út.
+A „harminc deka trappistát” 300 gramm. A „kenyeret” kenyér. A tárgyeset,
+a dekagramm és a tőhangváltás nem okoz gondot — a normalizáló 41 magyar
+tesztmondatból 41-et old meg helyesen.
+
+</td>
+<td width="50%" valign="top">
+
+**Megtanulja a szokásaidat**
+
+Ha egyszer megmondtad, hogy a „tejföl” nálad a Magyar Tejföl 20%,
+onnantól kérdés nélkül azt teszi be. A rossz tanulás egy paranccsal
+törölhető.
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+**Kiszámolja a mennyiséget**
+
+20 tojás → 2 doboz, mert tízesével árulják. Fél kiló darált hús →
+kimért áru, jelzi, hogy a végösszeg eltérhet. Ezt a program számolja,
+nem a nyelvi modell — abban hibázna.
+
+</td>
+<td valign="top">
+
+**Ár-érték arányt elemez**
+
+Tudja, hogy a pomace olívaolaj olcsóbb, de nem ugyanaz, mint az extra
+szűz. A hústartalom, a szabadtartás és a teljes kiőrlés mind számít
+neki.
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+**Figyeli az akciókat**
+
+Szól, ha a szokásos terméked épp kedvezményes — arra is, amire nem
+gondoltál volna.
+
+</td>
+<td valign="top">
+
+**Mindig visszamondja**
+
+Minden betett tétel névvel, kiszereléssel és árral hangzik el. Képernyő
+nélkül is ellenőrizhető.
+
+</td>
+</tr>
+</table>
+
+### Amit szándékosan nem tud
+
+**Nem fizet és nem ad le rendelést.** A kosarat előkészíti, a fizetés és
+az időpontválasztás a tiéd, a Kifli appban. Ez nem hiányzó funkció,
+hanem tervezési döntés: automatizált pénzköltés nélkül is megvan a
+haszon.
 
 ---
 
@@ -66,10 +128,16 @@ python3 telepites.py
 ```
 
 A telepítő végigvezet mindenen: ellenőrzi a rendszert, bekéri az OpenAI
-kulcsot és a Kifli belépési adataidat, teszteli a kapcsolatokat, és
+kulcsot és a Kifli belépési adataidat, **teszteli a kapcsolatokat**, és
 felajánlja, hogy betölti a korábbi rendeléseidből, mit szoktál venni.
 
-A grafikus felülethez ennyi elég. A **terminálos** változathoz kell még:
+Ha rossz jelszót adsz meg, ott és akkor derül ki, nem a harmadik
+futásnál.
+
+<details>
+<summary><b>A terminálos változathoz kell még</b></summary>
+
+<br>
 
 ```bash
 # macOS
@@ -78,6 +146,11 @@ brew install portaudio
 # Linux
 sudo apt install portaudio19-dev ffmpeg
 ```
+
+A grafikus felülethez ezekre nincs szükség — ott a böngésző kezeli a
+mikrofont.
+
+</details>
 
 ---
 
@@ -89,11 +162,11 @@ python3 kifli.py
 ```
 
 Megnyílik a böngészőben. Kattints a **Mehet** gombra, engedélyezd a
-mikrofont, és beszélj — nem kell gombot nyomni. Ha nincs mikrofon vagy
-nem engedélyezed, a felület gépelve ugyanúgy működik.
+mikrofont, és beszélj. Ha nincs mikrofon vagy nem engedélyezed, a
+felület gépelve ugyanúgy működik.
 
 | Parancs | Mit csinál |
-|---|---|
+|:--|:--|
 | `python3 kifli.py` | grafikus felület a böngészőben |
 | `python3 kifli.py --terminal` | hangvezérelt, terminálban |
 | `python3 kifli.py --gepelt` | gépelt beszélgetés, terminálban |
@@ -102,25 +175,19 @@ nem engedélyezed, a felület gépelve ugyanúgy működik.
 | `python3 kifli.py --felejts tej` | egy rossz tanulás törlése |
 | `python3 kifli.py --telepites` | beállítások újra |
 
-### Két változat
+### Két változat, egy kódbázis
 
-**Grafikus** (alapértelmezés) — böngészőben nyílik meg, látod a kosarat
-épülni, a találatokat és az árakat. A mikrofont a böngésző kezeli, ami
-**hardveres visszhangtörlést** ad: hangszóróval is használható, nem kell
-fejhallgató. Ehhez csak a `websockets` csomag kell.
+|  | Grafikus | Terminálos |
+|:--|:--|:--|
+| Indítás | `kifli.py` | `kifli.py --terminal` |
+| Visszhangtörlés | **hardveres** (WebRTC) | szoftveres |
+| Hangszóróval | működik | fejhallgató ajánlott |
+| Függőség | `websockets` | + `sounddevice`, PortAudio |
+| Mire jó | napi használat | szerver, Home Assistant mellé |
 
-**Terminálos** (`--terminal`) — ugyanaz a beszélgetés, felület nélkül.
-Szerveren, Home Assistant mellett, vagy ha nem akarsz böngészőt. Ehhez
-kell a `sounddevice` és a PortAudio is, és fejhallgató ajánlott, mert a
-visszhangtörlés csak szoftveres.
-
-### Ha kapkod a felismerés
-
-Hangosabb környezetben érdemes kevésbé érzékenyre állítani:
-
-```bash
-python3 kifli.py --erzekenyseg 0.85 --csend 1400
-```
+A böngésző ugyanazt a visszhangtörlést kapja az operációs rendszertől,
+amit a Zoom és a Meet használ. Emiatt a grafikus változatban közbe is
+lehet vágni anélkül, hogy az asszisztens visszahallaná magát.
 
 ---
 
@@ -136,21 +203,26 @@ python3 kifli.py --erzekenyseg 0.85 --csend 1400
   felület   ◄── esemény ── Kifli.hu · tanulás · egységár
 ```
 
+Az asszisztens **tizenhárom eszközt** kap: keresés, kosárkezelés,
+akciók, korábbi rendelések, szállítási idősávok. A nyelvi modell dönti
+el, mit mikor hív.
+
+De a **mennyiségszámítás, az egységár és a visszaigazoló mondatok a
+programban készülnek**, nem a modellben. Ez a projekt legfontosabb
+tervezési elve: ahol a modell csendben hibázna, ott kód dolgozik.
+
 Az API kulcs a Python oldalon marad, nem kerül ki a böngészőbe.
 
-Az asszisztens **tizenhárom eszközt** kap: keresés, kosárkezelés,
-akciók, korábbi rendelések, szállítási idősávok. Az LLM dönti el, mit
-mikor hív — de a mennyiségszámítás, az egységár és a visszaigazoló
-mondatok a programban készülnek, nem a modellben. Ez szándékos: ezekben
-a modellek hibáznak.
+<details>
+<summary><b>Fájlok</b></summary>
 
-### Fájlok
+<br>
 
 | Fájl | Mire való |
-|---|---|
+|:--|:--|
 | `kifli.py` | indító |
 | `telepites.py` | telepítő varázsló |
-| `gui.py` | grafikus felület szervere |
+| `gui.py` | a grafikus felület szervere |
 | `webui/index.html` | maga a felület |
 | `realtime.py` | hangvezérelt beszélgetés terminálban |
 | `asszisztens.py` | az eszközök és a rendszerprompt |
@@ -162,10 +234,15 @@ a modellek hibáznak.
 | `llm.py` | a magyar szöveg normalizálása |
 | `szinkron.py` | listából kosár, beszélgetés nélkül |
 
-### Home Assistant
+</details>
 
-Ha van Home Assistanted, a bevásárlólistát onnan is olvashatja.
-Tedd a `.env`-be:
+<details>
+<summary><b>Home Assistant integráció</b></summary>
+
+<br>
+
+Ha van Home Assistanted, a bevásárlólistát onnan is olvashatja. Tedd a
+`.env`-be:
 
 ```
 HA_URL=http://192.168.1.10
@@ -179,42 +256,54 @@ Utána:
 python3 szinkron.py
 ```
 
+A listát magyarul diktálhatod a Home Assistantbe egy custom sentences
+fájllal. A lista nyersen tárolja, amit mondasz — az értelmezés a
+szinkronizálásnál történik, egyszer.
+
+</details>
+
 ---
 
-## Biztonság és adatvédelem
+## Biztonság
 
 - A **Kifli jelszavad** a `.env` fájlban van, a gépeden, `600`
   jogosultsággal. Nem megy sehova rajtad és a Kiflin kívül.
-- A `.env` és az adatbázis a `.gitignore`-ban van — nem kerülnek a
-  repóba.
+- A `.env` és az adatbázis a `.gitignore`-ban van. A CI minden
+  pusholásnál ellenőrzi, hogy nem szivárgott-e ki titok.
 - A **beszéd** az OpenAI-hoz megy fel feldolgozásra.
-- A projekt a [`rohlik-mcp`](https://github.com/tomaspavlin/rohlik-mcp)
-  szervert használja, ami a Kifli **nem hivatalos** API-ját szólítja
-  meg. Ez az ÁSZF-be ütközhet, és egy alkalmazásfrissítés bármikor
-  elronthatja.
 
-**Ne használd ugyanazt a jelszót máshol.**
+> [!WARNING]
+> A projekt a [`rohlik-mcp`](https://github.com/tomaspavlin/rohlik-mcp)
+> szervert használja, ami a Kifli **nem hivatalos** API-ját szólítja
+> meg. Ez az ÁSZF-be ütközhet, és egy alkalmazásfrissítés bármikor
+> elronthatja. **Ne használd ugyanazt a jelszót máshol.**
 
 ---
 
 ## Ismert korlátok
 
-- A rendelés leadása mindig kézi — ez nem hiba, hanem szándék.
+- A rendelés leadása mindig kézi.
+- **Nem lát termékleírást** — a Kifli keresője nem adja vissza, így a
+  minőségi különbségeket a termék nevéből olvassa ki.
 - A Kifli időnként más árat számol, mint ami a keresőben látszik
   (akciók, kimért áruk). Ilyenkor a kosár ára az igaz, és az asszisztens
   azt mondja.
-- Kimért árunál (hús, zöldség) a végösszeg eltérhet.
 - A hangfelismerés ritka márkaneveket félrehallhat. A gyakoriakat
-  (Old Spice, Hellmann's, Heinz) megtanítottuk neki.
+  (Old Spice, Hellmann's, Heinz, Finish) megtanítottuk neki.
+- **Autóban visszhangozhat** — ott erős a hangszóró és a mikrofon közti
+  csatolás. Fejhallgató vagy telefonos használat a járható út.
+
+---
 
 ## Közreműködés
 
 Hibajelentést és javaslatot szívesen fogadok. Ha új funkciót írnál,
 érdemes előbb egy issue-ban megbeszélni.
 
-## Licenc
+<div align="center">
+<br>
 
-MIT — lásd a [LICENSE](LICENSE) fájlt.
-
-Ez egy független hobbiprojekt. Semmilyen kapcsolatban nem áll a
+MIT licenc · Független hobbiprojekt, semmilyen kapcsolatban nem áll a
 Kifli.hu-val vagy a Rohlik Grouppal.
+
+</div>
