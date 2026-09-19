@@ -254,8 +254,8 @@ def _():
 
 @teszt("kosar: Cart ID, darab, rendelhetoseg")
 def _():
-    import asszisztens as asz
-    r = asz.Asszisztens._kosar_ertelmez(KOSAR)
+    import parser as p
+    r = p.kosar_ertelmez(KOSAR)
     assert len(r["tetelek"]) == 3
     assert r["osszesen"] == 6067
     assert r["rendelheto"] is False
@@ -273,8 +273,8 @@ def _():
 
 @teszt("idosavok: szoveges fejlec, betelt savok, cimkek")
 def _():
-    import asszisztens as asz
-    s = asz.Asszisztens._idosavok_ertelmez(IDOSAVOK)
+    import parser as p
+    s = p.idosavok_ertelmez(IDOSAVOK)
     # A valasz nem tiszta JSON - a fejlec nem akaszthatja meg
     assert s, "a szoveges fejlec miatt nem ertelmezte a JSON-t"
     assert len(s) == 2, f"{len(s)} sav, 2 kellene"
@@ -290,13 +290,15 @@ def _():
 
 @teszt("ertelmetlen bemenet nem szall el")
 def _():
-    import asszisztens as asz
     import parser as p
     for rossz in ("", "   ", "nem json", "{}", "• csonka"):
         p.termekek_ertelmez(rossz)
         p.gyakori_ertelmez(rossz)
-        asz.Asszisztens._kosar_ertelmez(rossz)
-        asz.Asszisztens._idosavok_ertelmez(rossz)
+        p.kosar_ertelmez(rossz)
+        p.idosavok_ertelmez(rossz)
+        p.elofizetes_ertelmez(rossz)
+        p.cim_ertelmez(rossz)
+        p.akcio_kategoriak_ertelmez(rossz)
 
 
 # ──────────────────────────────────────────────────────── egysegar
@@ -371,6 +373,34 @@ def _():
     assert mj and "kimert" in mj
 
 
+@teszt("mennyiseg_szovegbol a veszelyes esetek")
+def _():
+    import szinkron
+    esetek = [
+        ("harminc deka", "weight", 300, "g", "deka = 10 gramm"),
+        ("30 dkg", "weight", 300, "g", "dkg"),
+        ("két liter", "volume", 2000, "ml", "ket liter"),
+        ("2 l", "volume", 2000, "ml", "2 l"),
+        ("fél kiló", "weight", 500, "g", "fel kilo"),
+        ("másfél liter", "volume", 1500, "ml", "masfel"),
+        ("3 doboz", "package", 3, None, "harom doboz"),
+        ("20 tojás", "piece", 20, None, "20 tojas"),
+        ("hat tojás", "piece", 6, None, "szamnev"),
+        ("", "unspecified", None, None, "ures"),
+        ("tej", "unspecified", None, None, "nincs szam"),
+        ("16 tekercses vécépapír", "unspecified", None, None,
+         "a 16 a kiszereles"),
+        ("egy 16 tekercses csomag", "package", 1, None, "egy csomag"),
+        ("16 tekercses csomag", "unspecified", None, None,
+         "tekercses utan a 16 nem darabszam"),
+    ]
+    for szoveg, kind, value, unit, cimke in esetek:
+        r = szinkron.mennyiseg_szovegbol(szoveg)
+        assert r["kind"] == kind, f"{cimke}: kind {r} ({szoveg!r})"
+        assert r["value"] == value, f"{cimke}: value {r} ({szoveg!r})"
+        assert r.get("unit") == unit, f"{cimke}: unit {r} ({szoveg!r})"
+
+
 # ─────────────────────────────────────────────────────── eszkozok
 
 fejezet("Eszkozok")
@@ -402,6 +432,16 @@ def _():
         r = a.hivas(nev, args)
         assert isinstance(r, dict), f"{nev}: {type(r)} jott vissza"
         json.dumps(r, ensure_ascii=False)   # kuldheto-e a modellnek
+
+
+@teszt("hivas() csak deklaralt eszkozt hiv")
+def _():
+    a = uj_asszisztens()
+    r = a.hivas("tarolo", {})
+    assert "hiba" in r
+    r = a.hivas("_kivesz_es_betesz", {"cart_item_id": "1", "uj_id": 1,
+                                      "darab": 1})
+    assert "hiba" in r and "Ismeretlen" in r["hiba"]
 
 
 @teszt("MCP hiba hibauzenetkent jon vissza, nem kivetelkent")
@@ -441,6 +481,44 @@ def _():
     assert "hiba" not in r, r
     assert r.get("darab") == 1
     assert "megjegyzes" in r, "nem szolt, hogy nem tudta a darabszamot"
+
+
+@teszt("30 tojas 10-es dobozbol 3 csomag, nem 30")
+def _():
+    # A hamis kereses tojasa 10 db-os (ID 30553), es a kosar is tartalmazza.
+    mcp = HamisMCP()
+    a = uj_asszisztens(mcp)
+    a.termek_keres("tojás")
+    mcp.naplo.clear()
+    r = a.kosarba_tesz(30553, "tojás", mennyiseg_szoveg="30 tojás")
+    assert "hiba" not in r, r
+    assert r["darab"] == 3, r
+    hivas = next(h for h in mcp.naplo if h[0] == "add_to_cart")
+    assert hivas[1]["products"][0]["quantity"] == 3
+
+
+@teszt("a kereses mennyiseget megjegyzi a betetelnel")
+def _():
+    kosar = KOSAR.replace('• Házi vekni (Rádi)',
+                          '• Magyar Tej ESL Tej 2,8% (Magyar)')
+    mcp = HamisMCP(kosar=kosar)
+    a = uj_asszisztens(mcp)
+    a.termek_keres("tej", mennyiseg_szoveg="két liter")
+    mcp.naplo.clear()
+    r = a.kosarba_tesz(16321, "tej")
+    assert "hiba" not in r, r
+    assert r["darab"] == 2, r
+
+
+@teszt("a kod darabszama elsobbseget elvez az LLM-mel szemben")
+def _():
+    mcp = HamisMCP()
+    a = uj_asszisztens(mcp)
+    a.termek_keres("tojás")
+    mcp.naplo.clear()
+    r = a.kosarba_tesz(30553, "tojás", darab=30, mennyiseg_szoveg="30 darab")
+    assert "hiba" not in r, r
+    assert r["darab"] == 3, f"az LLM 30-at adott, a kodnak 3-at kell: {r}"
 
 
 @teszt("az LLM altal adott darabszam ervenyesul")
@@ -489,6 +567,36 @@ def _():
     a = uj_asszisztens()
     r = a.mennyiseget_modosit("nincs ilyen termek", 2)
     assert "hiba" in r
+
+
+@teszt("mennyiseget_modosit visszarak ha a betetel elhasal")
+def _():
+    class Fele(HamisMCP):
+        def __init__(self, *a, **k):
+            super().__init__(*a, **k)
+            self._add = 0
+
+        def hiv(self, nev, args=None):
+            if nev == "add_to_cart":
+                self._add += 1
+                if self._add == 1:
+                    self.naplo.append((nev, args))
+                    from mcp_kliens import MCPHiba
+                    raise MCPHiba("betetel elhasalt")
+            return super().hiv(nev, args)
+
+    mcp = Fele()
+    a = uj_asszisztens(mcp)
+    a.utolso_talalatok.append(
+        {"id": 5611, "nev": "Házi vekni", "ar": 599,
+         "mennyiseg": 500, "egyseg": "g"})
+    mcp.naplo.clear()
+    r = a.mennyiseget_modosit("vekni", 3)
+    assert "hiba" in r, r
+    addok = [h for h in mcp.naplo if h[0] == "add_to_cart"]
+    assert len(addok) == 2, addok
+    assert addok[0][1]["products"][0]["quantity"] == 3
+    assert addok[1][1]["products"][0]["quantity"] == 1
 
 
 @teszt("tanult termeknel nem keres ujra")
@@ -613,6 +721,29 @@ def _():
     a.termek_keres("tej")
     r = a.kosarba_tesz(16321, "tej")
     assert "hiba" in r and "NEM kerult be" in r["hiba"], r
+
+
+@teszt("ha a kosar nem ellenorizheto, nem allitja hogy bement")
+def _():
+    mcp = HamisMCP()
+    mcp.hibas_toolok.add("get_cart_content")
+    a = uj_asszisztens(mcp)
+    a.termek_keres("tej")
+    r = a.kosarba_tesz(16321, "tej")
+    assert "hiba" not in r, r
+    assert "figyelmeztetes" in r, r
+    assert "NEM kerult be" not in (r.get("hiba") or "")
+
+
+@teszt("kosar-ellenorzes nem keveri a hasonlo neveket")
+def _():
+    import asszisztens as asz
+    assert asz._nevek_egyeznek("Magyar Tej ESL Tej 2,8%",
+                               "Magyar Tej ESL Tej 2,8%")
+    assert not asz._nevek_egyeznek("tej", "tejföl")
+    assert not asz._nevek_egyeznek("tej", "Magyar Tej ESL Tej 2,8%")
+    csonka = "Kitchin Extra szűz olívaolaj"
+    assert asz._nevek_egyeznek(csonka, csonka + " 0.75 l")
 
 
 @teszt("kosarbol_kivesz a Cart ID-t hasznalja")

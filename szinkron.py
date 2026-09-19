@@ -18,6 +18,7 @@ A '#'-tel kezdodo sorok megjegyzesek.
 import argparse
 import math
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -82,6 +83,150 @@ def darabszam(mennyiseg, csomag_ertek, csomag_egyseg, bulk=False):
     darab = max(1, math.ceil(kert / csomag))
     tobblet = (darab * csomag - kert) / kert
     return darab, tobblet, None
+
+
+# Magyar mennyiseg-szoveg -> a darabszam() altal vart struktura.
+# Ezt a program szamolja, nem a modell: a "30 tojas" 3 doboz, a
+# "16 tekercses" a kiszereles, nem a rendelt mennyiseg.
+
+_EGYESEK = {
+    "egy": 1, "ketto": 2, "ket": 2, "harom": 3, "negy": 4, "ot": 5,
+    "hat": 6, "het": 7, "nyolc": 8, "kilenc": 9,
+}
+_TIZESEK = {
+    "tiz": 10, "husz": 20, "harminc": 30, "negyven": 40, "otven": 50,
+    "hatvan": 60, "hetven": 70, "nyolcvan": 80, "kilencven": 90, "szaz": 100,
+}
+_TORETEK = {"fel": 0.5, "negyed": 0.25, "masfel": 1.5, "haromnegyed": 0.75}
+
+_SULY = {
+    "g": 1, "gramm": 1, "grammot": 1,
+    "dkg": 10, "deka": 10, "dekat": 10, "dekagramm": 10,
+    "kg": 1000, "kilo": 1000, "kilot": 1000, "kilogramm": 1000,
+}
+_TERFOGAT = {
+    "ml": 1, "milliliter": 1,
+    "cl": 10,
+    "dl": 100, "deci": 100,
+    "l": 1000, "liter": 1000, "litert": 1000, "literes": 1000,
+}
+_CSOMAG = {
+    "doboz", "dobozt", "uveg", "uvegget", "zacsko", "zacskot",
+    "csomag", "csomagot", "tabla", "tablat", "fej", "fejet",
+    "gerezd", "gerezdet", "szal", "szalat", "csokor", "csokrot",
+    "karton", "kartont", "tegely", "tegelys", "flakon", "flakont",
+    "konzerv", "konzervet", "kocka", "kockat", "rekesz", "rekeszt",
+    "tekercs", "tekercset", "szelet", "szeletet", "pohar", "poharat",
+    "vodor", "vodrot", "tasak", "tasakot", "lada", "ladat",
+}
+_DARAB = {"db", "darab", "darabot", "dbot"}
+_CSOMAG_TO = {
+    "doboz", "uveg", "zacsko", "csomag", "tabla", "fej", "gerezd",
+    "szal", "csokor", "karton", "tegely", "flakon", "konzerv", "kocka",
+    "rekesz", "tekercs", "szelet", "pohar", "vodor", "tasak", "lada",
+    "darab",
+}
+
+
+def _eh(szo):
+    """Ekezet nelkuli alak osszehasonlitashoz."""
+    return (szo.lower()
+            .replace("á", "a").replace("é", "e").replace("í", "i")
+            .replace("ó", "o").replace("ö", "o").replace("ő", "o")
+            .replace("ú", "u").replace("ü", "u").replace("ű", "u"))
+
+
+def _szamnevet_olvas(szo):
+    """'harminc', 'ket', 'tizenketto', '2,5' -> szam vagy None."""
+    szo = _eh(szo)
+    if szo in _TORETEK:
+        return _TORETEK[szo]
+    if szo in _EGYESEK:
+        return _EGYESEK[szo]
+    if szo in _TIZESEK:
+        return _TIZESEK[szo]
+    for elotag, alap in (("tizen", 10), ("huszon", 20)):
+        if szo.startswith(elotag):
+            rest = szo[len(elotag):]
+            if rest in _EGYESEK:
+                return alap + _EGYESEK[rest]
+    for tizes, ertek in _TIZESEK.items():
+        if tizes != "tiz" and szo.startswith(tizes):
+            rest = szo[len(tizes):]
+            if rest in _EGYESEK:
+                return ertek + _EGYESEK[rest]
+    tiszta = szo.replace(",", ".")
+    try:
+        return float(tiszta)
+    except ValueError:
+        return None
+
+
+def _kiszereles_melleknev(szo):
+    """'tekercses', 'darabos' - a termek leirasa, nem a rendelt mennyiseg."""
+    szo = _eh(szo)
+    for veg in ("es", "os", "as"):
+        if szo.endswith(veg) and len(szo) > len(veg) + 2:
+            if szo[:-len(veg)] in _CSOMAG_TO:
+                return True
+    return False
+
+
+def mennyiseg_szovegbol(szoveg):
+    """
+    'harminc deka', 'ket liter', '3 doboz', '20 tojas' -> quantity dict.
+
+    A kimenet a darabszam() formatuma:
+      kind = weight|volume|package|piece|unspecified
+      weight value GRAMM, volume value MILLILITER.
+    """
+    ures = {"kind": "unspecified", "value": None, "unit": None}
+    if not szoveg or not str(szoveg).strip():
+        return ures
+
+    tokenek = re.findall(
+        r"[0-9]+(?:[.,][0-9]+)?|[a-záéíóöőúüű]+",
+        str(szoveg).lower())
+    if not tokenek:
+        return ures
+
+    # A "16 tekercses" a KISZERELES, nem a rendelt mennyiseg. Az elotte
+    # allo szamot ('egy 16 tekercses csomag') vesszuk, magat a 16-ot nem.
+    ertek = None
+    kezdet = 0
+    i = 0
+    while i < len(tokenek):
+        n = _szamnevet_olvas(tokenek[i])
+        if n is not None:
+            kov = tokenek[i + 1] if i + 1 < len(tokenek) else ""
+            if _kiszereles_melleknev(kov):
+                i += 2
+                continue
+            ertek = n
+            kezdet = i + 1
+            break
+        i += 1
+    if ertek is None:
+        return ures
+
+    for tok in tokenek[kezdet:kezdet + 4]:
+        if _szamnevet_olvas(tok) is not None:
+            continue
+        if _kiszereles_melleknev(tok):
+            continue
+        ala = _eh(tok)
+        if ala in _SULY:
+            return {"kind": "weight", "value": ertek * _SULY[ala],
+                    "unit": "g"}
+        if ala in _TERFOGAT:
+            return {"kind": "volume", "value": ertek * _TERFOGAT[ala],
+                    "unit": "ml"}
+        if ala in _CSOMAG:
+            return {"kind": "package", "value": ertek, "unit": None}
+        if ala in _DARAB:
+            return {"kind": "piece", "value": ertek, "unit": None}
+
+    return {"kind": "piece", "value": ertek, "unit": None}
 
 
 def sorszamot_ker(kerdes, talalatok, max_probalkozas=3):

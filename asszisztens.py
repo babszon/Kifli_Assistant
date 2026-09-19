@@ -16,37 +16,36 @@ Ami NEM az LLM-e:
 """
 
 import argparse
-import json
-import os
-import re
 import time
 import sys
 
 import adat
 import arak
-import llm
 import parser as p
 import szinkron
 import motor as motor_modul
 from mcp_kliens import MCPKliens, MCPHiba
 
-def _szamma(szoveg):
-    """'6 067', '4629', '105.09' -> float. None, ha nem ertelmezheto."""
-    if szoveg is None:
-        return None
-    tiszta = str(szoveg).replace("\u00a0", "").replace(" ", "")
-    if "," in tiszta and "." not in tiszta:
-        tiszta = tiszta.replace(",", ".")
-    else:
-        tiszta = tiszta.replace(",", "")
-    try:
-        return float(tiszta)
-    except ValueError:
-        return None
-
 
 Z, PI, S, SZ, HA, ALAP = ("\033[92m", "\033[91m", "\033[93m",
                           "\033[96m", "\033[90m", "\033[0m")
+
+# A kosarellenorzeshez: a Kifli kosarnevei gyakran csonkak, de a
+# "tej" nem egyezhet a "tejfol"-lel.
+_NEV_MIN_ELOTAG = 12
+
+
+def _nevek_egyeznek(a, b):
+    """Pontos egyezes, vagy csonka elotag (min. 12 karakter)."""
+    a = (a or "").lower().strip()
+    b = (b or "").lower().strip()
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    rovidebb, hosszabb = (a, b) if len(a) <= len(b) else (b, a)
+    return (len(rovidebb) >= _NEV_MIN_ELOTAG
+            and hosszabb.startswith(rovidebb))
 
 RENDSZERPROMPT = """Egy magyar haztartas bevasarlo-asszisztense vagy a
 Kifli.hu webshopban. A felhasznalo beszel hozzad, te eszkozoket hivsz.
@@ -98,25 +97,29 @@ hogy "folytassam?". Csak ott allj meg, ahol tenyleg dontenie kell.
    talalati listabol. Ne keress ujra, hacsak nem kifejezetten mast ker.
 6. SOHA ne kerdezd, hogy "folytassam?" vagy "mehetunk tovabb?".
    Menj tovabb magadtol. Akkor allj meg, ha elfogytak a tetelek.
-5. Ha kerdez (mi a legolcsobb, mik vannak meg, mennyibe kerul),
+7. Ha kerdez (mi a legolcsobb, mik vannak meg, mennyibe kerul),
    VALASZOLJ a mar meglevo talalatokbol. Ne hivj ujra eszkozt.
-6. Ha lezarna (kesz, mehet, ennyi lesz), hivd a kosar_lezar eszkozt.
-7. Ha a felhasznalo MASIK markat vagy valtozatot ker (pl. "inkabb
+8. Ha lezarna (kesz, mehet, ennyi lesz), hivd a kosar_lezar eszkozt.
+9. Ha a felhasznalo MASIK markat vagy valtozatot ker (pl. "inkabb
    Finish-t"), es az nincs a mar meglevo talalatok kozott, KERESS RA
    kulon. Csak akkor valassz a meglevo listabol, ha tenyleg ott van.
-8. TOBB TETEL EGYSZERRE. Ha a felhasznalo egy mondatban tobb terméket
+10. TOBB TETEL EGYSZERRE. Ha a felhasznalo egy mondatban tobb terméket
    sorol fel, mindet fel kell dolgoznod. Menj VEGIG rajtuk egyesevel:
    javasolj, kerdezz, tedd be, majd LEPJ A KOVETKEZORE magadtol.
    A vegen mondd meg, ha valamelyik kimaradt.
    SOHA ne hagyj ki tetelt csendben.
-9. MENNYISEGEK - EZ FONTOS.
-   A kosarba_tesz 'darab' parametere azt mondja meg, HANY CSOMAGOT
-   teszunk a kosarba. Ez NEM ugyanaz, mint a kiszereles.
+11. MENNYISEGEK - EZ FONTOS.
+   Add at a mennyiseg_szoveg-et UGY, AHOGY A FELHASZNALO MONDTA:
+   'harminc deka', '20 tojas', 'ket liter'. A PROGRAM szamolja ki
+   belole a csomagszamot - NE SZAMOLJ TE. A 'darab' parametert CSAK
+   akkor add meg, ha a felhasznalo explicit CSOMAGSZAMOT mondott
+   ('ket doboz', 'tegyel be harom csomagot').
 
-   - "egy 16 tekercses csomag vecepapir"  -> darab = 1
-   - "harom doboz tojas"                  -> darab = 3
-   - "ket liter tej", a kiszereles 1 liter -> darab = 2
-   - "harminc deka sajt", a kiszereles 400 g -> darab = 1
+   - "egy 16 tekercses csomag vecepapir"  -> mennyiseg_szoveg = 'egy csomag'
+   - "harom doboz tojas"                  -> mennyiseg_szoveg = 'harom doboz'
+   - "ket liter tej"                      -> mennyiseg_szoveg = 'ket liter'
+   - "harminc deka sajt"                  -> mennyiseg_szoveg = 'harminc deka'
+   - "20 tojas"                           -> mennyiseg_szoveg = '20 tojas'
    - ha nem mondott mennyiseget           -> hagyd ki a parametert
 
    A kiszereles (16 tekercs, 10 db, 1 liter) a termek TULAJDONSAGA,
@@ -334,11 +337,19 @@ ESZKOZOK = [
                     "darab": {
                         "type": "integer",
                         "description":
-                            "Hany CSOMAGOT tegyunk a kosarba. FIGYELEM: ez "
-                            "NEM a kiszereles! Ha a felhasznalo egy 16 "
-                            "tekercses csomag vecepapirt ker, ez 1, nem 16. "
-                            "Ha ket liter tejet ker es a kiszereles 1 liter, "
-                            "ez 2. Ha nem mondott mennyiseget, hagyd ki."},
+                            "Hany CSOMAGOT tegyunk a kosarba. CSAK akkor "
+                            "add meg, ha a felhasznalo explicit csomagszamot "
+                            "mondott ('ket doboz', 'harom csomag'). Ha "
+                            "mennyiseget mondott ('20 tojas', 'ket liter', "
+                            "'harminc deka'), add at mennyiseg_szoveg-kent, "
+                            "es HAGYD KI ezt a parametert - a program "
+                            "szamolja ki a csomagszamot."},
+                    "mennyiseg_szoveg": {
+                        "type": "string",
+                        "description":
+                            "A felhasznalo altal mondott mennyiseg nyersen, "
+                            "pl. 'harminc deka', '20 tojas', 'ket liter'. "
+                            "A program ebbol szamolja a csomagszamot."},
                 },
                 "required": ["kifli_id", "termek"],
             },
@@ -573,6 +584,9 @@ ESZKOZOK = [
 ]
 
 
+_ESZKOZ_NEVEK = {e["name"] for e in ESZKOZOK}
+
+
 class Asszisztens:
     def __init__(self, mcp, tarolo, szaraz=False):
         self.mcp = mcp
@@ -584,6 +598,7 @@ class Asszisztens:
         self.kep_tetelek = None        # a feltoltott keprol kiolvasva
         # Amire mar kerestunk ebben a beszelgetesben - nem kerdezunk ujra
         self._kereses_gyorstar = {}
+        self._mennyiseg_gyorstar = {}  # termek -> a felhasznalo mennyisege
         self._kosar_gyorstar = None    # (idopont, nyers valasz)
         self.lezarva = False
 
@@ -602,6 +617,8 @@ class Asszisztens:
         termek = (termek or "").strip().lower()
         if not termek:
             return {"hiba": "Ures keresés."}
+        if mennyiseg_szoveg:
+            self._mennyiseg_gyorstar[termek] = str(mennyiseg_szoveg).strip()
 
         ismert = self.tarolo.keres(termek)
 
@@ -700,24 +717,59 @@ class Asszisztens:
         """A kosar valtozott - a kovetkezo lekeres legyen friss."""
         self._kosar_gyorstar = None
 
+    def _kivesz_es_betesz(self, cart_item_id, uj_id, darab,
+                          vissza_id=None, vissza_darab=None):
+        """
+        Levesz egy tetelt, majd betesz egy masikat (vagy ugyanazt
+        mas darabszammal). Ha a betetel elhasal, a regit visszarakja,
+        hogy a tétel ne tunjon el.
+        """
+        try:
+            self.mcp.hiv("remove_from_cart",
+                         {"order_field_id": str(cart_item_id)})
+        except MCPHiba as e:
+            self._kosar_ervenytelenit()
+            return False, f"Nem sikerult levenni: {e}"
+        try:
+            self.mcp.hiv("add_to_cart", {"products": [
+                {"product_id": uj_id, "quantity": darab}]})
+            self._kosar_ervenytelenit()
+            return True, None
+        except MCPHiba as e:
+            vissza_hiba = None
+            if vissza_id is not None:
+                try:
+                    self.mcp.hiv("add_to_cart", {"products": [
+                        {"product_id": vissza_id,
+                         "quantity": vissza_darab or 1}]})
+                except MCPHiba as vissza:
+                    vissza_hiba = str(vissza)
+            self._kosar_ervenytelenit()
+            if vissza_hiba:
+                return False, (f"{e}; a visszarakas sem sikerult: "
+                               f"{vissza_hiba}")
+            return False, str(e)
+
     def _kosarban_van(self, kifli_id, nev):
         """
         Ellenorzi, hogy a termek tenyleg bekerult-e a kosarba.
         Visszaad: (bent_van, kosarban_szereplo_ar)
 
+        bent_van: True / False / None (None = a kosarat nem sikerult
+        lekerni, ne allitsuk sem azt, hogy bement, sem azt, hogy nem).
+
         Nev alapjan keres, mert a get_cart_content a Cart ID-t adja,
-        nem a termek ID-jat.
+        nem a termek ID-jat. A hasonlo, rovid nevek (tej / tejfol)
+        nem keverednek: csak pontos vagy csonka-elotag egyezes szamit.
         """
         try:
             nyers = self._kosar_nyers(frissen=True)
         except MCPHiba:
-            return True, None  # ha nem tudjuk ellenorizni, ne blokkoljunk
+            return None, None
 
         tetelek = self._kosar_ertelmez(nyers)["tetelek"]
-        cel = (nev or "").lower().strip()
         for t in tetelek:
-            kosar_nev = (t.get("nev") or "").lower().strip()
-            if kosar_nev == cel or cel in kosar_nev or kosar_nev in cel:
+            if _nevek_egyeznek(nev, t.get("nev")):
                 return True, t.get("ar")
         return False, None
 
@@ -760,7 +812,7 @@ class Asszisztens:
             if t.get("ar"):
                 self.arak_szerint[t["id"]] = t["ar"]
 
-    def kosarba_tesz(self, kifli_id, termek, darab=None):
+    def kosarba_tesz(self, kifli_id, termek, darab=None, mennyiseg_szoveg=None):
         talalat = next((t for t in self.utolso_talalatok
                         if t["id"] == kifli_id), None)
         if talalat is None:
@@ -769,12 +821,23 @@ class Asszisztens:
 
         termek = (termek or talalat["nev"]).strip().lower()
 
-        # A darabszamot AZ LLM adja meg, mert o beszelt a felhasznaloval.
-        # Korabban a termek NEVEBOL probaltuk kiolvasni, es a "16 tekercses
-        # vecepapir" nevbol 16 csomag lett - pedig a 16 a KISZERELES, nem
-        # a rendelt mennyiseg. Ez a hiba nehezen volt eszrevehetö.
+        # A darabszamot A PROGRAM szamolja a kimondott mennyisegbol es
+        # a kiszerelesbol. Az LLM 'darab' parametere csak akkor ervenyes,
+        # ha nincs ertelmezheto mennyiseg_szoveg - kulonben a "30 tojas"
+        # 30 csomag lenne egy 10-es dobozbol.
+        szoveg = (mennyiseg_szoveg or "").strip() or (
+            self._mennyiseg_gyorstar.get(termek) or "")
+        ertelmezett = szinkron.mennyiseg_szovegbol(szoveg) if szoveg else None
+        van_mennyiseg = (ertelmezett
+                         and ertelmezett.get("kind") not in (None, "unspecified")
+                         and ertelmezett.get("value") is not None)
+
         megjegyzes = tobblet = None
-        if darab is not None:
+        if van_mennyiseg:
+            db, tobblet, megjegyzes = szinkron.darabszam(
+                ertelmezett, talalat.get("mennyiseg"), talalat.get("egyseg"),
+                p.kimert_e(talalat))
+        elif darab is not None:
             try:
                 db = max(1, int(darab))
             except (TypeError, ValueError):
@@ -805,7 +868,7 @@ class Asszisztens:
         # jelez hibat, ha a Kifli elutasitja a terméket - ilyenkor a
         # felhasznalo azt hinne, hogy megrendelte.
         bent, kosar_ar = self._kosarban_van(kifli_id, talalat["nev"])
-        if not bent:
+        if bent is False:
             print(f"  {PI}! NEM kerult be: {talalat['nev']}{ALAP}")
             return {"hiba": f"A(z) '{talalat['nev']}' NEM kerult be a kosarba. "
                             f"A Kifli elutasitotta, vagy elfogyott. "
@@ -835,6 +898,11 @@ class Asszisztens:
                 f"{tobblet * 100:.0f}%-kal tobb, mint amennyit kert")
         if megjegyzes:
             valasz["megjegyzes"] = megjegyzes
+        if bent is None:
+            valasz["figyelmeztetes"] = (
+                "A kosarat most nem tudtam ellenorizni. Ne allitsd "
+                "biztosra, hogy bement - mondd meg, hogy a Kifli "
+                "most nem valaszolt, es a felhasznalo nezze meg.")
         return valasz
 
     def mennyiseget_modosit(self, termek, darab):
@@ -888,18 +956,14 @@ class Asszisztens:
             return {"szaraz_futas": True, "termek": tetel["nev"],
                     "uj_darab": uj_darab}
 
-        try:
-            self.mcp.hiv("remove_from_cart",
-                         {"order_field_id": str(tetel["cart_item_id"])})
-            self.mcp.hiv("add_to_cart", {"products": [
-                {"product_id": talalat["id"], "quantity": uj_darab}]})
-            self._kosar_ervenytelenit()
-        except MCPHiba as e:
-            self._kosar_ervenytelenit()
-            return {"hiba": f"Nem sikerult a modositas: {e}"}
+        ok, hiba = self._kivesz_es_betesz(
+            tetel["cart_item_id"], talalat["id"], uj_darab,
+            vissza_id=talalat["id"], vissza_darab=tetel.get("darab") or 1)
+        if not ok:
+            return {"hiba": f"Nem sikerult a modositas: {hiba}"}
 
         bent, kosar_ar = self._kosarban_van(talalat["id"], tetel["nev"])
-        if not bent:
+        if bent is False:
             return {"hiba": f"A modositas utan a(z) '{tetel['nev']}' NEM "
                             f"maradt a kosarban. Nezd meg a kosarat."}
 
@@ -1122,18 +1186,14 @@ class Asszisztens:
             return {"hiba": f"A(z) '{eredeti['nev']}' mar nincs a kosarban."}
 
         darab = kosarban.get("darab") or 1
-        try:
-            self.mcp.hiv("remove_from_cart",
-                         {"order_field_id": str(kosarban["cart_item_id"])})
-            self.mcp.hiv("add_to_cart", {"products": [
-                {"product_id": alternativ_id, "quantity": darab}]})
-            self._kosar_ervenytelenit()
-        except MCPHiba as e:
-            self._kosar_ervenytelenit()
-            return {"hiba": f"A csere nem sikerult: {e}"}
+        ok, hiba = self._kivesz_es_betesz(
+            kosarban["cart_item_id"], alternativ_id, darab,
+            vissza_id=eredeti_id, vissza_darab=darab)
+        if not ok:
+            return {"hiba": f"A csere nem sikerult: {hiba}"}
 
         bent, kosar_ar = self._kosarban_van(alternativ_id, uj["nev"])
-        if not bent:
+        if bent is False:
             return {"hiba": f"A csere utan a(z) '{uj['nev']}' NEM kerult a "
                             f"kosarba. Nezd meg a kosarat."}
 
@@ -1213,84 +1273,7 @@ class Asszisztens:
         print(f"  {PI}- {tetel['nev']}{ALAP}")
         return {"levettem": tetel["nev"]}
 
-    @staticmethod
-    def _kosar_ertelmez(nyers):
-        """
-        A get_cart_content szoveges kimenetenek ertelmezese.
-
-        A valodi formatum:
-            Cart Summary:
-            • Total items: 3
-            • Total price: 6067 HUF
-            • Can order: No
-
-            Products in cart:
-            • "A" minosegu Farm Premium Tojas (Farm Tojas)
-              Quantity: 1
-              Price: 839 HUF
-              Category: Tejtermek es tojas
-              Cart ID: 123456789
-
-        A 'Cart ID' kell a remove_from_cart-hoz - NEM a termek ID-ja!
-        """
-        tetelek = []
-        osszesen = None
-        rendelheto = None
-        aktualis = None
-        termeklistaban = False
-
-        def lezar():
-            if aktualis and aktualis.get("cart_item_id"):
-                tetelek.append(aktualis)
-
-        for sor in (nyers or "").splitlines():
-            csupasz = sor.strip()
-            if not csupasz:
-                continue
-
-            t = re.search(r"Total price:\s*([\d\s.,]+?)\s*(?:HUF|Ft)", csupasz, re.I)
-            if t:
-                osszesen = _szamma(t.group(1))
-                continue
-            t = re.search(r"Can order:\s*(\w+)", csupasz, re.I)
-            if t:
-                rendelheto = t.group(1).strip().lower() in ("yes", "true", "igen")
-                continue
-            if re.search(r"Products in cart", csupasz, re.I):
-                termeklistaban = True
-                continue
-
-            # Uj termek: felsorolasjel, de nem a Summary blokkban
-            if csupasz.startswith(("•", "-", "*")) and termeklistaban:
-                lezar()
-                fej = csupasz.lstrip("•-* ").strip()
-                marka = None
-                t = re.match(r"^(.*?)\s*\(([^()]*)\)\s*$", fej)
-                if t:
-                    fej, marka = t.group(1).strip(), t.group(2).strip()
-                aktualis = {"nev": fej, "marka": marka, "darab": 1,
-                            "ar": None, "kategoria": None, "cart_item_id": None}
-                continue
-
-            if aktualis is None:
-                continue
-
-            t = re.search(r"Quantity:\s*(\d+)", csupasz, re.I)
-            if t:
-                aktualis["darab"] = int(t.group(1))
-            t = re.search(r"Price:\s*([\d\s.,]+?)\s*(?:HUF|Ft)", csupasz, re.I)
-            if t:
-                aktualis["ar"] = _szamma(t.group(1))
-            t = re.search(r"Category:\s*(.+)$", csupasz, re.I)
-            if t:
-                aktualis["kategoria"] = t.group(1).strip()
-            t = re.search(r"Cart ID:\s*(\d+)", csupasz, re.I)
-            if t:
-                aktualis["cart_item_id"] = t.group(1)
-
-        lezar()
-        return {"tetelek": tetelek, "osszesen": osszesen,
-                "rendelheto": rendelheto}
+    _kosar_ertelmez = staticmethod(p.kosar_ertelmez)
 
     def kosar_osszeg(self):
         """A VALODI Kifli kosar vegosszege."""
@@ -1402,12 +1385,7 @@ class Asszisztens:
         except MCPHiba as e:
             return {"hiba": str(e)}
 
-        kategoriak = []
-        for sor in (nyers or "").splitlines():
-            t = re.search(r"[•\-\*]\s*(.+?)\s*\(ID:\s*(\d+)\)", sor)
-            if t:
-                kategoriak.append({"nev": t.group(1).strip(),
-                                   "id": int(t.group(2))})
+        kategoriak = p.akcio_kategoriak_ertelmez(nyers)
 
         if not kategoriak:
             return {"kategoriak": [],
@@ -1506,32 +1484,7 @@ class Asszisztens:
         adatok["nyers_reszlet"] = nyers[:1500]
         return adatok
 
-    @staticmethod
-    def _elofizetes_ertelmez(nyers):
-        """A get_premium_info szoveges kimenetebol a lenyeg."""
-        adatok = {"aktiv": None}
-        if not nyers:
-            return adatok
-
-        t = re.search(r"PREMIUM STATUS:\s*(\w+)", nyers, re.I)
-        if t:
-            adatok["aktiv"] = t.group(1).strip().lower() == "active"
-        t = re.search(r"Type:\s*(.+)", nyers)
-        if t:
-            adatok["tipus"] = t.group(1).strip()
-        t = re.search(r"End:\s*(.+)", nyers)
-        if t:
-            adatok["lejar"] = t.group(1).strip()
-
-        # A szabad szallitasok szama tobbfele formaban johet
-        for minta, kulcs in (
-                (r"(?:free\s*delivery|ingyenes).*?(\d+)", "ingyenes_szallitas"),
-                (r"(?:express|expressz).*?(\d+)", "expressz"),
-                (r"remaining[^\d]*(\d+)", "maradt")):
-            t = re.search(minta, nyers, re.I)
-            if t:
-                adatok[kulcs] = int(t.group(1))
-        return adatok
+    _elofizetes_ertelmez = staticmethod(p.elofizetes_ertelmez)
 
     def szallitasi_cimem(self):
         """A jelenlegi szallitasi cim es a kovetkezo szallitas."""
@@ -1551,47 +1504,7 @@ class Asszisztens:
             "appban tudja atallitani a felhasznalo.")
         return adatok
 
-    @staticmethod
-    def _cim_ertelmez(nyers):
-        """
-        A get_account_data kimenetebol a szallitasi cim.
-
-        A valasz sok mindent tartalmaz; csak a cimet es a kovetkezo
-        szallitast szedjuk ki, hogy ne terheljuk feleslegesen a modellt.
-        """
-        adatok = {}
-        if not nyers:
-            return adatok
-
-        # JSON-kent is johet
-        try:
-            json_adat = json.loads(nyers)
-
-            def bejar(csomo):
-                if isinstance(csomo, dict):
-                    if csomo.get("fullAddress"):
-                        adatok.setdefault("cim", csomo["fullAddress"])
-                        adatok.setdefault("varos", csomo.get("city"))
-                        return
-                    for e in csomo.values():
-                        bejar(e)
-                elif isinstance(csomo, list):
-                    for e in csomo:
-                        bejar(e)
-
-            bejar(json_adat)
-        except (json.JSONDecodeError, TypeError):
-            pass
-
-        if not adatok.get("cim"):
-            for minta, kulcs in (
-                    (r'"?fullAddress"?\s*[:=]\s*"?([^",\n]+)', "cim"),
-                    (r"(?:Address|Cim|Cím)\s*[:=]\s*(.+)", "cim"),
-                    (r'"?city"?\s*[:=]\s*"?([^",\n]+)', "varos")):
-                t = re.search(minta, nyers, re.I)
-                if t:
-                    adatok[kulcs] = t.group(1).strip()
-        return adatok
+    _cim_ertelmez = staticmethod(p.cim_ertelmez)
 
     def szallitasi_idosavok(self):
         try:
@@ -1635,82 +1548,7 @@ class Asszisztens:
                 "lefoglaltad."),
         }
 
-    @staticmethod
-    def _idosavok_ertelmez(nyers):
-        """
-        A get_delivery_slots valaszanak ertelmezese.
-
-        A valasz NEM tiszta JSON: egy '⏰ DELIVERY SLOTS:' fejlec elozi
-        meg, ezert a JSON-t ki kell vagni belole. A szerkezetben van
-        kulon 'expressSlot', 'preselectedSlots' (cimkezett ajanlatok) es
-        a napokra bontott teljes lista - mindet bejarjuk.
-        """
-        if not nyers:
-            return []
-
-        # A JSON a szoveges fejlec utan kezdodik
-        eleje = nyers.find("{")
-        vege = nyers.rfind("}")
-        if eleje == -1 or vege == -1:
-            return []
-        try:
-            adatok = json.loads(nyers[eleje:vege + 1])
-        except json.JSONDecodeError:
-            return []
-
-        talalt = {}
-
-        def sav_felvesz(csomo, cimke=None):
-            kapacitas = csomo.get("timeSlotCapacityDTO") or {}
-            uzenet = (kapacitas.get("capacityMessage") or "").lower()
-            # A betelt savokat kihagyjuk: "Elkelt", "Megtelt", vagy RED
-            if csomo.get("capacity") == "RED" or uzenet in ("elkelt", "megtelt"):
-                return
-            if (kapacitas.get("totalFreeCapacityPercent") or 0) <= 0:
-                return
-
-            azonosito = csomo.get("slotId")
-            if azonosito in talalt:
-                if cimke and not talalt[azonosito].get("cimke"):
-                    talalt[azonosito]["cimke"] = cimke
-                return
-
-            talalt[azonosito] = {
-                "nap": str(csomo.get("since", ""))[:10],
-                "ido": csomo.get("timeWindow")
-                       or f"{str(csomo.get('since'))[11:16]}-"
-                          f"{str(csomo.get('till'))[11:16]}",
-                "ar": csomo.get("price", 0),
-                "tipus": csomo.get("type"),
-                "premium": bool(csomo.get("premium")),
-                "eco": bool(csomo.get("eco")),
-                "szabad": kapacitas.get("capacityMessage"),
-            }
-            if cimke:
-                talalt[azonosito]["cimke"] = cimke
-
-        def bejar(csomo, cimke=None):
-            if isinstance(csomo, dict):
-                # Cimkezett ajanlat: {"title": "...", "slot": {...}}
-                if "slot" in csomo and isinstance(csomo["slot"], dict):
-                    alcim = (csomo.get("title") or "").strip()
-                    bejar(csomo["slot"], alcim or cimke)
-                    return
-                if "slotId" in csomo and "since" in csomo:
-                    sav_felvesz(csomo, cimke)
-                    return
-                for kulcs, ertek in csomo.items():
-                    # Az expressSlot kulon cimkét kap
-                    alcimke = ("Expressz" if kulcs == "expressSlot"
-                               else cimke)
-                    bejar(ertek, alcimke)
-            elif isinstance(csomo, list):
-                for elem in csomo:
-                    bejar(elem, cimke)
-
-        bejar(adatok)
-        savok = sorted(talalt.values(), key=lambda s: (s["nap"], s["ido"]))
-        return savok
+    _idosavok_ertelmez = staticmethod(p.idosavok_ertelmez)
 
     def kosar_lezar(self):
         self.lezarva = True
@@ -1770,7 +1608,7 @@ class Asszisztens:
         tud mit mondani a felhasznalonak.
         """
         fuggveny = getattr(self, nev, None)
-        if fuggveny is None or nev.startswith("_"):
+        if nev not in _ESZKOZ_NEVEK or fuggveny is None:
             return {"hiba": f"Ismeretlen eszkoz: {nev}"}
         try:
             eredmeny = fuggveny(**(argumentumok or {}))
