@@ -13,7 +13,7 @@ Magyarul, úgy ahogy tényleg beszélsz — „harminc deka trappistát”,
 ![Python](https://img.shields.io/badge/Python-3.9+-132B52?style=flat-square&labelColor=0F2342)
 ![OpenAI Realtime](https://img.shields.io/badge/OpenAI-Realtime-132B52?style=flat-square&labelColor=0F2342)
 ![Magyar](https://img.shields.io/badge/nyelv-magyar-C8322B?style=flat-square&labelColor=0F2342)
-![Tesztek](https://img.shields.io/badge/tesztek-87-7FB069?style=flat-square&labelColor=0F2342)
+![Tesztek](https://img.shields.io/badge/tesztek-95-7FB069?style=flat-square&labelColor=0F2342)
 ![Licenc](https://img.shields.io/badge/licenc-MIT-7FB069?style=flat-square&labelColor=0F2342)
 
 </div>
@@ -148,7 +148,9 @@ haszon.
 
 ## Telepítés
 
-Kell hozzá **Python 3.9+**, **Node.js** és egy **OpenAI API kulcs**.
+Kell hozzá **Python 3.9+** és egy **OpenAI API kulcs**. A Kifli
+hivatalos MCP-szerverét használja — Node.js csak akkor kell, ha a
+régi, nem hivatalos `rohlik-mcp`-re esel vissza.
 
 ```bash
 git clone https://github.com/babszon/Kifli_Assistant.git
@@ -159,25 +161,26 @@ source .venv/bin/activate          # Windows: .venv\Scripts\activate
 
 pip install -r requirements.txt
 python3 telepites.py
-python3 mcp_javitas.py      # ajánlott, lásd lent
 ```
 
 <details>
-<summary><b>Miért kell a <code>mcp_javitas.py</code></b></summary>
+<summary><b>A régi <code>rohlik-mcp</code> (nem ajánlott)</b></summary>
 
 <br>
 
-A `rohlik-mcp` minden API-hívás előtt bejelentkezik, és a hívás végén
-rögtön ki is jelentkezik — tizenhat metódus, mind így. Egy 15 tételes
-bevásárlólista ezért **30-nál is több bejelentkezést** jelent, és a
-bejelentkezési végpont a legszigorúbban korlátozott. Innen jött a
-`HTTP 429` pár termék után.
+Alapból a [hivatalos Kifli MCP](https://www.kifli.hu/mcp-docs) megy:
+`https://mcp.kifli.hu/mcp`. JSON-t ad, munkamenetet tart, és van
+`clear_cart` meg kötegelt keresés — kevesebb rátakorlát.
 
-A javítás újrahasznosítja a munkamenetet: **30+ bejelentkezés helyett
-egy**. A script letölti a forrást, alkalmazza a javítást, lefordítja, és
-beállítja a `.env`-ben.
+A régi `@tomaspavlin/rohlik-mcp` csak visszaesés. Ehhez kell a Node.js
+és a `mcp_javitas.py` (minden hívásnál ki-be jelentkezett, ettől jött
+a HTTP 429). Bekapcsolás:
 
-A program enélkül is működik, csak lassabban és több várakozással.
+```
+KIFLI_MCP=stdio
+```
+
+Aztán: `python3 mcp_javitas.py`
 
 </details>
 
@@ -322,15 +325,15 @@ Az API kulcs a Python oldalon marad, nem kerül ki a böngészőbe.
 | `realtime.py` | hangvezérelt beszélgetés terminálban |
 | `hang.py` | mikrofon, felismerés, felolvasás |
 | `motor.py` | OpenAI / Gemini szöveges tool calling |
-| `mcp_kliens.py` | kapcsolat a Kifli szerverhez, rátakorláttal |
+| `mcp_kliens.py` | kapcsolat a hivatalos Kifli MCP-hez, rátakorláttal |
 | `parser.py` | a Kifli válaszainak feldolgozása |
 | `arak.py` | egységár-számítás |
 | `adat.py` | tanulás (SQLite) és Home Assistant |
 | `llm.py` | a magyar szöveg normalizálása |
 | `szinkron.py` | listából kosár, beszélgetés nélkül |
 | `api.py` | telefonos gyorsfelvétel (Siri) |
-| `mcp_javitas.py` | a Kifli-kapcsolat munkamenet-javítása |
-| `tesztek.py` | 87 funkcionális teszt, hálózat nélkül |
+| `mcp_javitas.py` | a régi, nem hivatalos MCP munkamenet-javítása |
+| `tesztek.py` | 95 funkcionális teszt, hálózat nélkül |
 | `ellenorzes.py` | statikus ellenőrzés |
 | `Dockerfile` | szerveres futtatás (NAS, VPS) |
 
@@ -341,8 +344,10 @@ Az API kulcs a Python oldalon marad, nem kerül ki a böngészőbe.
 
 <br>
 
-Ha van Home Assistanted, a bevásárlólistát onnan is olvashatja. Tedd a
-`.env`-be:
+Ha van Home Assistanted, két út van:
+
+1. **A bevásárlólista onnan jön**, a kosár a Kifliben épül. Tedd a
+   `.env`-be:
 
 ```
 HA_URL=http://192.168.1.10
@@ -360,6 +365,11 @@ A listát magyarul diktálhatod a Home Assistantbe egy custom sentences
 fájllal. A lista nyersen tárolja, amit mondasz — az értelmezés a
 szinkronizálásnál történik, egyszer.
 
+2. **Az asszisztens maga fut a HA mellett** (NAS, add-on, Docker). A
+   hangos réteg, a mennyiségszámítás és a tanult termékek helyben
+   maradnak; a Kiflit a hivatalos MCP-n keresztül éri el. A rendelés
+   leadása továbbra is kézi.
+
 </details>
 
 ---
@@ -373,29 +383,30 @@ szinkronizálásnál történik, egyszer.
 - A **beszéd** és a **feltöltött képek** az OpenAI-hoz mennek fel
   feldolgozásra.
 
-> [!WARNING]
-> A projekt a [`rohlik-mcp`](https://github.com/tomaspavlin/rohlik-mcp)
-> szervert használja, ami a Kifli **nem hivatalos** API-ját szólítja
-> meg. Ez az ÁSZF-be ütközhet, és egy alkalmazásfrissítés bármikor
-> elronthatja. **Ne használd ugyanazt a jelszót máshol.**
+> [!NOTE]
+> Alapból a [hivatalos Kifli MCP](https://www.kifli.hu/mcp-docs) megy.
+> A régi [`rohlik-mcp`](https://github.com/tomaspavlin/rohlik-mcp)
+> csak `KIFLI_MCP=stdio` mellett él — az a Kifli nem hivatalos API-ja,
+> ÁSZF-be ütközhet. **Ne használd ugyanazt a jelszót máshol.**
 
 ---
 
 ## Ismert korlátok
 
 - A rendelés leadása mindig kézi.
-- **Nem tud idősávot foglalni és címet váltani.** Ezeket a Kifli API-ja
-  nem adja ki olvasáson túl. Az idősávokat felolvassa árral együtt, a
-  választás a Kifli appban történik — ahol úgyis fizetsz.
-- **Nem lát termékleírást** — a Kifli keresője nem adja vissza, így a
-  minőségi különbségeket a termék nevéből olvassa ki.
+- **Szándékosan nem foglal idősávot és nem vált címet**, noha a
+  hivatalos MCP tudná. Az időpont és a fizetés a Kifli appban marad.
+- **Nem lát termékleírást a keresőben** — a minőségi különbségeket a
+  termék nevéből olvassa ki. A hivatalos MCP-n a részletes adat
+  külön lekérhető, de ez még nincs bekötve.
 - A Kifli időnként más árat számol, mint ami a keresőben látszik
   (akciók, kimért áruk). Ilyenkor a kosár ára az igaz, és az asszisztens
   azt mondja.
-- **A Kifli rátakorlátot szab.** A `mcp_javitas.py` és a tanult termékek
+- **A Kifli rátakorlátot szab.** A hivatalos MCP és a tanult termékek
   után ebbe ritkán futsz bele, de sűrű használatnál előfordul. Ilyenkor
-  a program vár és újrapróbál. A korlát aktív megkerülése nem cél: az a
-  Kifli szerverei elleni szándékos terhelés lenne.
+  a program **azonnal megáll**, nem vár és nem próbálkozik újra — a
+  várakozás csak tovább terhelné a Kiflit. A korlát aktív megkerülése
+  nem cél: az a Kifli szerverei elleni szándékos terhelés lenne.
 - **A kézírás felismerése nem tökéletes.** Ezért minden bizonytalan
   tételre rákérdez, ahelyett hogy találgatna. Ha a kép széle levágja a
   sort, azt is jelzi — újrafotózás kell.
@@ -409,7 +420,7 @@ szinkronizálásnál történik, egyszer.
 ## Fejlesztés
 
 ```bash
-python3 tesztek.py       # 87 funkcionális teszt, hálózat nélkül
+python3 tesztek.py       # 95 funkcionális teszt, hálózat nélkül
 python3 ellenorzes.py    # statikus ellenőrzés
 ```
 

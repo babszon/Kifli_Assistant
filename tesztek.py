@@ -301,6 +301,65 @@ def _():
         p.akcio_kategoriak_ertelmez(rossz)
 
 
+@teszt("hivatalos kereses JSON")
+def _():
+    import parser as p
+    nyers = json.dumps({"result": {"results": [{"products": [{
+        "productId": 16321, "productName": "Magyar Tej ESL Tej 2,8%",
+        "brand": "Magyar", "price": 397, "textualAmount": "1 l",
+        "pricePerUnit": {"full": 397, "currency": "Ft"},
+        "badges": ["-10 %"],
+    }]}]}})
+    t = p.termekek_ertelmez(nyers)
+    assert len(t) == 1
+    assert t[0]["id"] == 16321 and t[0]["ar"] == 397
+    assert t[0]["egyseg"] == "l" and t[0]["mennyiseg"] == 1
+    assert t[0]["kedvezmeny"] == -10
+
+
+@teszt("hivatalos kosar JSON")
+def _():
+    import parser as p
+    nyers = json.dumps({"result": {"data": {
+        "totalPrice": 6067, "submitConditionPassed": False,
+        "items": {"16321": {
+            "productId": 16321, "orderFieldId": 555,
+            "productName": "Magyar Tej ESL Tej 2,8%",
+            "quantity": 2, "price": 794, "brand": "Magyar",
+            "primaryCategoryName": "Tej",
+        }},
+    }}})
+    r = p.kosar_ertelmez(nyers)
+    assert len(r["tetelek"]) == 1
+    assert r["osszesen"] == 6067 and r["rendelheto"] is False
+    assert r["tetelek"][0]["cart_item_id"] == "555"
+    assert r["tetelek"][0]["product_id"] == 16321
+    assert r["tetelek"][0]["darab"] == 2
+
+
+@teszt("hivatalos xtra JSON")
+def _():
+    import parser as p
+    e = p.elofizetes_ertelmez(json.dumps({
+        "result": {"xtra": {"active": True, "membership_type": "Xtra",
+                            "active_until": "2026-12-01",
+                            "remaining_days": 73}}}))
+    assert e["aktiv"] is True
+    assert e["tipus"] == "Xtra" and e["lejar"] == "2026-12-01"
+
+
+@teszt("hivatalos akcio kategoriak JSON")
+def _():
+    import parser as p
+    k = p.akcio_kategoriak_ertelmez(json.dumps({
+        "result": {"categories": [
+            {"id": 300118, "name": "Ments meg!"},
+            {"id": 300119, "name": "Akció a hét minden napján"},
+        ]}}))
+    assert [x["id"] for x in k] == [300118, 300119]
+    assert k[0]["nev"] == "Ments meg!"
+
+
 # ──────────────────────────────────────────────────────── egysegar
 
 fejezet("Egysegar")
@@ -754,6 +813,32 @@ def _():
     r = a.kosarbol_kivesz("vekni")
     assert r.get("levettem"), r
     assert ("remove_from_cart", {"order_field_id": "123456615"}) in mcp.naplo
+
+
+@teszt("kosarbol_kivesz utan nem ker le ujra kosarat")
+def _():
+    mcp = HamisMCP()
+    a = uj_asszisztens(mcp)
+    a.kosarbol_kivesz("vekni")
+    mcp.naplo.clear()
+    r = a.kosar_megmutat()
+    assert "hiba" not in r, r
+    assert not any(h[0] == "get_cart_content" for h in mcp.naplo), mcp.naplo
+    nevek = [t["nev"] for t in r["kosar"]]
+    assert not any("vekni" in n.lower() for n in nevek), nevek
+
+
+@teszt("kosarbol_kivesz mindent egy hivasban levesz")
+def _():
+    mcp = HamisMCP()
+    a = uj_asszisztens(mcp)
+    mcp.naplo.clear()
+    r = a.kosarbol_kivesz(mind=True)
+    assert "hiba" not in r, r
+    assert len(r["levettem"]) == 3, r
+    assert r.get("kosar") == []
+    assert sum(1 for n, _ in mcp.naplo if n == "remove_from_cart") == 3
+    assert sum(1 for n, _ in mcp.naplo if n == "get_cart_content") == 1
 
 
 @teszt("tobb talalatra visszakerdez, nem talalgat")
@@ -1318,10 +1403,9 @@ for sor in sys.stdin:
 """
     p = Path(tempfile.gettempdir()) / "h_zarteszt.py"
     p.write_text(HAMIS)
-    regi = (mk.MIN_SZUNET, mk.BUNTETO_SZUNET, mk.UJRA_VARAKOZAS,
+    regi = (mk.MIN_SZUNET, mk.BUNTETO_SZUNET,
             mk.BUNTETES_HOSSZA, mk.ZARLAT_HOSSZA)
     mk.MIN_SZUNET = mk.BUNTETO_SZUNET = 0.05
-    mk.UJRA_VARAKOZAS = (0.4, 0.4)
     mk.BUNTETES_HOSSZA = mk.ZARLAT_HOSSZA = 0.05
     try:
         with mk.MCPKliens(parancs=["python3", str(p)]) as m:
@@ -1334,9 +1418,12 @@ for sor in sys.stdin:
                     pass
 
             def gyors():
-                time.sleep(0.15)     # a lassu mar varakozik
+                time.sleep(0.02)
                 t0 = time.monotonic()
-                m.hiv("gyors")
+                try:
+                    m.hiv("gyors")
+                except mk.MCPHiba:
+                    pass
                 ido["gyors"] = time.monotonic() - t0
 
             szalak = [threading.Thread(target=f) for f in (lassu, gyors)]
@@ -1348,7 +1435,7 @@ for sor in sys.stdin:
             assert ido.get("gyors", 99) < 0.4, (
                 f"a masik hivas blokkolt ({ido.get('gyors'):.2f} mp)")
     finally:
-        (mk.MIN_SZUNET, mk.BUNTETO_SZUNET, mk.UJRA_VARAKOZAS,
+        (mk.MIN_SZUNET, mk.BUNTETO_SZUNET,
          mk.BUNTETES_HOSSZA, mk.ZARLAT_HOSSZA) = regi
         p.unlink(missing_ok=True)
 
@@ -1383,21 +1470,25 @@ for sor in sys.stdin:
 """
     p = Path(tempfile.gettempdir()) / "hamis_bunt.py"
     p.write_text(HAMIS)
-    regi = (mk.UJRA_VARAKOZAS, mk.MIN_SZUNET, mk.BUNTETO_SZUNET,
-            mk.BUNTETES_HOSSZA)
-    mk.UJRA_VARAKOZAS = (0.01,)
-    mk.MIN_SZUNET, mk.BUNTETO_SZUNET, mk.BUNTETES_HOSSZA = 0.01, 0.25, 30
+    regi = (mk.MIN_SZUNET, mk.BUNTETO_SZUNET,
+            mk.BUNTETES_HOSSZA, mk.ZARLAT_HOSSZA)
+    mk.MIN_SZUNET, mk.BUNTETO_SZUNET, mk.BUNTETES_HOSSZA = 0.01, 0.4, 30
+    mk.ZARLAT_HOSSZA = 0.05
     try:
         with mk.MCPKliens(parancs=["python3", str(p)]) as m:
-            m.hiv("x")                      # 429 -> ujraprobal -> ok
+            try:
+                m.hiv("x")                  # 429 -> zarlat
+            except mk.MCPHiba:
+                pass
+            time.sleep(0.08)                # a zarlat lejart
             t0 = time.monotonic()
             m.hiv("y")                      # buntetesi idoszakban vagyunk
             eltelt = time.monotonic() - t0
             assert eltelt >= 0.2, (
                 f"nem lassitott a 429 utan ({eltelt:.2f} mp)")
     finally:
-        (mk.UJRA_VARAKOZAS, mk.MIN_SZUNET, mk.BUNTETO_SZUNET,
-         mk.BUNTETES_HOSSZA) = regi
+        (mk.MIN_SZUNET, mk.BUNTETO_SZUNET,
+         mk.BUNTETES_HOSSZA, mk.ZARLAT_HOSSZA) = regi
         p.unlink(missing_ok=True)
 
 
@@ -1424,8 +1515,7 @@ for sor in sys.stdin:
 """
     p = Path(tempfile.gettempdir()) / "hamis_vegleges.py"
     p.write_text(HAMIS)
-    regi = (mk.UJRA_VARAKOZAS, mk.MIN_SZUNET, mk.BUNTETO_SZUNET)
-    mk.UJRA_VARAKOZAS = (0.01, 0.01)
+    regi = (mk.MIN_SZUNET, mk.BUNTETO_SZUNET)
     mk.MIN_SZUNET, mk.BUNTETO_SZUNET = 0.01, 0.01
     try:
         with mk.MCPKliens(parancs=["python3", str(p)]) as m:
@@ -1438,7 +1528,7 @@ for sor in sys.stdin:
                 assert "par perc" in uzenet.lower(), (
                     "nem mondja meg, mit tegyen a felhasznalo")
     finally:
-        (mk.UJRA_VARAKOZAS, mk.MIN_SZUNET, mk.BUNTETO_SZUNET) = regi
+        (mk.MIN_SZUNET, mk.BUNTETO_SZUNET) = regi
         p.unlink(missing_ok=True)
 
 
@@ -1466,8 +1556,8 @@ for sor in sys.stdin:
 """
     p = Path(tempfile.gettempdir()) / "h_zarlat_t.py"
     p.write_text(HAMIS)
-    regi = (mk.UJRA_VARAKOZAS, mk.MIN_SZUNET, mk.ZARLAT_HOSSZA)
-    mk.UJRA_VARAKOZAS, mk.MIN_SZUNET, mk.ZARLAT_HOSSZA = (0.02,), 0.01, 30
+    regi = (mk.MIN_SZUNET, mk.ZARLAT_HOSSZA)
+    mk.MIN_SZUNET, mk.ZARLAT_HOSSZA = 0.01, 30
     try:
         with mk.MCPKliens(parancs=["python3", str(p)]) as m:
             try:
@@ -1485,7 +1575,7 @@ for sor in sys.stdin:
             assert eltelt < 0.5, (
                 f"10 hivas {eltelt:.2f} mp - befagyna a beszelgetes")
     finally:
-        (mk.UJRA_VARAKOZAS, mk.MIN_SZUNET, mk.ZARLAT_HOSSZA) = regi
+        (mk.MIN_SZUNET, mk.ZARLAT_HOSSZA) = regi
         p.unlink(missing_ok=True)
 
 
@@ -1506,8 +1596,9 @@ def _():
         assert "rata_korlat" in sz, f
 
 
-@teszt("429 utan var es ujraprobal")
+@teszt("429-nel azonnal zarlat, nem var")
 def _():
+    import time
     import mcp_kliens as mk
     HAMIS = '''
 import json, sys
@@ -1522,27 +1613,37 @@ for sor in sys.stdin:
               "serverInfo":{"name":"f","version":"0"}}}
     elif u.get("method") == "tools/call":
         n += 1
-        if n < 3:
-            ki = {"jsonrpc":"2.0","id":u["id"],"result":{"content":[
-                  {"type":"text","text":"HTTP 429: Too Many Requests"}],
-                  "isError":True}}
-        else:
-            ki = {"jsonrpc":"2.0","id":u["id"],"result":{"content":[
-                  {"type":"text","text":"Found 0 products:"}]}}
+        ki = {"jsonrpc":"2.0","id":u["id"],"result":{"content":[
+              {"type":"text","text":"HTTP 429: Too Many Requests"}],
+              "isError":True}}
     else:
         continue
     sys.stdout.write(json.dumps(ki) + "\\n"); sys.stdout.flush()
 '''
     p = Path(tempfile.gettempdir()) / "hamis_rata_t.py"
     p.write_text(HAMIS)
-    regi_var, regi_szunet = mk.UJRA_VARAKOZAS, mk.MIN_SZUNET
-    mk.UJRA_VARAKOZAS, mk.MIN_SZUNET = (0.02, 0.02, 0.02), 0.01
+    regi = (mk.MIN_SZUNET, mk.ZARLAT_HOSSZA)
+    mk.MIN_SZUNET, mk.ZARLAT_HOSSZA = 0.01, 30
     try:
         with mk.MCPKliens(parancs=["python3", str(p)]) as m:
-            r = m.hiv("search_products", {"product_name": "tej"})
-            assert "Found" in r, r
+            t0 = time.monotonic()
+            try:
+                m.hiv("search_products", {"product_name": "tej"})
+                raise AssertionError("nem dobott hibat")
+            except mk.MCPHiba as e:
+                assert "tul sok kerest" in str(e), e
+            eltelt = time.monotonic() - t0
+            assert eltelt < 0.5, (
+                f"429 utan {eltelt:.2f} mp-et vart, azonnal kellett volna")
+            # a masodik hivas se varjon
+            t1 = time.monotonic()
+            try:
+                m.hiv("search_products", {"product_name": "kenyer"})
+            except mk.MCPHiba:
+                pass
+            assert time.monotonic() - t1 < 0.3
     finally:
-        mk.UJRA_VARAKOZAS, mk.MIN_SZUNET = regi_var, regi_szunet
+        mk.MIN_SZUNET, mk.ZARLAT_HOSSZA = regi
         p.unlink(missing_ok=True)
 
 
@@ -1554,20 +1655,48 @@ fejezet("MCP szerver")
 @teszt("sajat MCP szerver hasznalhato a .env-bol")
 def _():
     import mcp_kliens as mk
-    regi = os.environ.get("ROHLIK_MCP_PARANCS")
+    import inspect
+    forras = inspect.getsource(mk.MCPKliens.__init__)
+    assert "ROHLIK_MCP_PARANCS" in forras
+    assert "KIFLI_MCP" in inspect.getsource(mk._stdio_e)
+
+
+@teszt("hivatalos MCP a regi eszkozneveket lekepezi")
+def _():
+    from mcp_kliens import hivatalos_lekepez
+    nev, args = hivatalos_lekepez("search_products", {"product_name": "tej"})
+    assert nev == "batch_search_products"
+    assert args["queries"][0]["keyword"] == "tej"
+    assert "context" in args
+    nev, args = hivatalos_lekepez("add_to_cart", {"products": [
+        {"product_id": 16321, "quantity": 2}]})
+    assert nev == "add_items_to_cart"
+    assert args["items"][0] == {"productId": 16321, "quantity": 2}
+    nev, args = hivatalos_lekepez("get_cart_content")
+    assert nev == "get_cart"
+    nev, args = hivatalos_lekepez("remove_from_cart",
+                                  {"product_id": 12, "order_field_id": "99"})
+    assert nev == "remove_cart_item" and args["product_id"] == 12
+
+
+@teszt("alapbol hivatalos MCP, paranccsal stdio")
+def _():
+    import mcp_kliens as mk
+    regi = os.environ.get("KIFLI_MCP")
     try:
-        os.environ["ROHLIK_MCP_PARANCS"] = "node /valahol/index.js"
-        k = mk.MCPKliens.__new__(mk.MCPKliens)
-        # csak a parancs-valasztast nezzuk, nem inditjuk el
-        mk.MCPKliens.__init__.__wrapped__ if False else None
-        import inspect
-        forras = inspect.getsource(mk.MCPKliens.__init__)
-        assert "ROHLIK_MCP_PARANCS" in forras
+        os.environ.pop("KIFLI_MCP", None)
+        k = mk.MCPKliens()
+        assert not k.stdio_e and k.tud_clear_cart
+        k2 = mk.MCPKliens(parancs=["python3", "-c", "pass"])
+        assert k2.stdio_e and not k2.tud_clear_cart
+        os.environ["KIFLI_MCP"] = "stdio"
+        k3 = mk.MCPKliens()
+        assert k3.stdio_e
     finally:
         if regi is None:
-            os.environ.pop("ROHLIK_MCP_PARANCS", None)
+            os.environ.pop("KIFLI_MCP", None)
         else:
-            os.environ["ROHLIK_MCP_PARANCS"] = regi
+            os.environ["KIFLI_MCP"] = regi
 
 
 @teszt("a javitas letezik es a lenyeget tartalmazza")

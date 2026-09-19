@@ -134,9 +134,8 @@ Ha egy eszkoz valaszaban 'hiba' mezo van, az a termek NEM kerult be a
 kosarba. Ilyenkor:
 - SOHA ne mondd, hogy bement, hogy betetted, vagy hogy megvan.
 - Mondd meg roviden, mi tortent, es lepj tovabb a kovetkezo tetelre.
-- A program magatol var es ujraprobal, ha a Kifli lassit - neked nem
-  kell ujra hivnod ugyanazt az eszkozt. Ha megis hibat kapsz, az mar a
-  vegleges allapot.
+- A program 429-nel NEM var es NEM probalkozik ujra. Ha hibat kapsz,
+  az mar a vegleges allapot.
 - Ha a hiba azt mondja, hogy a Kifli "tul sok kerest kap", akkor a
   webshop lassit, nem a te hibad es nem is a felhasznaloe. Ilyenkor:
   ALLJ MEG AZONNAL. Ne probald vegigfuttatni a tobbi tételt, mert
@@ -427,12 +426,21 @@ ESZKOZOK = [
         },
         {
             "name": "kosarbol_kivesz",
-            "description": ("Levesz egy tetelt a VALODI Kifli kosarbol. "
-                            "A termek nevenek egy reszlete eleg."),
+            "description": ("Levesz egy tetelt a VALODI Kifli kosarbol, "
+                            "vagy mindent, ha a felhasznalo kiuriteni akar. "
+                            "A valaszban bent van a friss kosar - utana "
+                            "NE hivd a kosar_megmutat-ot."),
             "parameters": {
                 "type": "object",
-                "properties": {"termek": {"type": "string"}},
-                "required": ["termek"],
+                "properties": {
+                    "termek": {"type": "string",
+                               "description": "a termek neve vagy egy resze"},
+                    "mind": {"type": "boolean",
+                             "description":
+                                 "Ha igaz, MINDEN tetelt levesz egy hivasban. "
+                                 "Hasznald, ha azt mondja: uritsd ki, mindent "
+                                 "vegyel ki, torold a kosarat."},
+                },
             },
         },
         {
@@ -599,7 +607,7 @@ class Asszisztens:
         # Amire mar kerestunk ebben a beszelgetesben - nem kerdezunk ujra
         self._kereses_gyorstar = {}
         self._mennyiseg_gyorstar = {}  # termek -> a felhasznalo mennyisege
-        self._kosar_gyorstar = None    # (idopont, nyers valasz)
+        self._kosar_gyorstar = None    # (idopont, ertelmezett kosar)
         self.lezarva = False
 
     # ------------------------------------------------------------- eszkozok
@@ -699,23 +707,37 @@ class Asszisztens:
         return eredmeny
 
     # A kosar tartalma ennyi ideig ervenyes. Egymas utan betett
-    # tételeknel igy nem kerjuk le minden alkalommal - a Kifli
-    # ratakorlatja miatt ez sokat szamit.
-    KOSAR_ERVENYES = 4.0     # masodperc
+    # vagy levett tételeknel igy nem kerjuk le minden alkalommal.
+    KOSAR_ERVENYES = 15.0     # masodperc
 
-    def _kosar_nyers(self, frissen=False):
-        """A kosar nyers tartalma, rovid ideig gyorstarazva."""
+    def _kosar_adat(self, frissen=False):
+        """A kosar ertelmezett tartalma, gyorstarazva."""
         most = time.monotonic()
         if (not frissen and self._kosar_gyorstar
                 and most - self._kosar_gyorstar[0] < self.KOSAR_ERVENYES):
             return self._kosar_gyorstar[1]
         nyers = self.mcp.hiv("get_cart_content")
-        self._kosar_gyorstar = (most, nyers)
-        return nyers
+        adat = p.kosar_ertelmez(nyers)
+        self._kosar_gyorstar = (most, adat)
+        return adat
 
     def _kosar_ervenytelenit(self):
         """A kosar valtozott - a kovetkezo lekeres legyen friss."""
         self._kosar_gyorstar = None
+
+    def _kosar_helyben_levesz(self, cart_item_id):
+        """Levett tetel: a gyorstarbol is kikerul, uj lekeres nelkul."""
+        if not self._kosar_gyorstar:
+            return
+        adat = self._kosar_gyorstar[1]
+        tetelek = [t for t in adat["tetelek"]
+                   if str(t.get("cart_item_id")) != str(cart_item_id)]
+        osszeg = sum((t.get("ar") or 0) for t in tetelek)
+        self._kosar_gyorstar = (time.monotonic(), {
+            "tetelek": tetelek,
+            "osszesen": osszeg or None,
+            "rendelheto": adat.get("rendelheto"),
+        })
 
     def _kivesz_es_betesz(self, cart_item_id, uj_id, darab,
                           vissza_id=None, vissza_darab=None):
@@ -763,11 +785,11 @@ class Asszisztens:
         nem keverednek: csak pontos vagy csonka-elotag egyezes szamit.
         """
         try:
-            nyers = self._kosar_nyers(frissen=True)
+            adat = self._kosar_adat(frissen=True)
         except MCPHiba:
             return None, None
 
-        tetelek = self._kosar_ertelmez(nyers)["tetelek"]
+        tetelek = adat["tetelek"]
         for t in tetelek:
             if _nevek_egyeznek(nev, t.get("nev")):
                 return True, t.get("ar")
@@ -920,11 +942,10 @@ class Asszisztens:
             return {"hiba": f"A darabszam nem szam: {darab!r}"}
 
         try:
-            nyers = self._kosar_nyers()
+            tetelek = self._kosar_adat()["tetelek"]
         except MCPHiba as e:
             return {"hiba": str(e)}
 
-        tetelek = self._kosar_ertelmez(nyers)["tetelek"]
         mit = (termek or "").lower().strip()
         if not mit:
             return {"hiba": "Nem mondtad meg, melyik tetelt."}
@@ -1037,11 +1058,10 @@ class Asszisztens:
         felhasznalo korabban elutasitott, azt nem ajanljuk ujra.
         """
         try:
-            nyers = self._kosar_nyers()
+            tetelek = self._kosar_adat()["tetelek"]
         except MCPHiba as e:
             return {"hiba": str(e)}
 
-        tetelek = self._kosar_ertelmez(nyers)["tetelek"]
         if not tetelek:
             return {"javaslatok": [], "uzenet": "A kosar ures."}
 
@@ -1176,11 +1196,11 @@ class Asszisztens:
 
         # A regi darabszamot atvesszuk
         try:
-            nyers = self._kosar_nyers()
+            tetelek = self._kosar_adat()["tetelek"]
         except MCPHiba as e:
             return {"hiba": str(e)}
         kosarban = next(
-            (t for t in self._kosar_ertelmez(nyers)["tetelek"]
+            (t for t in tetelek
              if t["nev"].lower() == eredeti["nev"].lower()), None)
         if kosarban is None:
             return {"hiba": f"A(z) '{eredeti['nev']}' mar nincs a kosarban."}
@@ -1207,11 +1227,10 @@ class Asszisztens:
     def kosar_megmutat(self):
         """A VALODI Kifli kosar tartalma, nem a memoria."""
         try:
-            nyers = self._kosar_nyers()
+            adat_kosar = self._kosar_adat()
         except MCPHiba as e:
             return {"hiba": str(e)}
 
-        adat_kosar = self._kosar_ertelmez(nyers)
         tetelek = adat_kosar["tetelek"]
         if not tetelek:
             print(f"\n{HA}  A Kifli kosar ures.{ALAP}")
@@ -1234,14 +1253,53 @@ class Asszisztens:
         # mond a kosarrol. Korabban ebbol lett egy felrevezeto uzenet.
         return {"kosar": tetelek, "osszeg_ft": round(osszeg) or None}
 
-    def kosarbol_kivesz(self, termek):
-        """A VALODI Kifli kosarbol vesz le tetelt."""
+    def kosarbol_kivesz(self, termek="", mind=False):
+        """A VALODI Kifli kosarbol vesz le tetelt, vagy az egeszet."""
         try:
-            nyers = self._kosar_nyers()
+            tetelek = self._kosar_adat()["tetelek"]
         except MCPHiba as e:
             return {"hiba": str(e)}
 
-        tetelek = self._kosar_ertelmez(nyers)["tetelek"]
+        mind = mind in (True, "true", "True", 1, "1")
+        if mind:
+            if not tetelek:
+                return {"uzenet": "A kosar mar ures.", "kosar": []}
+            if self.szaraz:
+                print(f"  {HA}[szaraz] - {len(tetelek)} tetel{ALAP}")
+                return {"szaraz_futas": True,
+                        "mit_vennek_le": [t["nev"] for t in tetelek]}
+            if getattr(self.mcp, "tud_clear_cart", False):
+                try:
+                    self.mcp.hiv("clear_cart")
+                except MCPHiba as e:
+                    return {"hiba": str(e)}
+                nevek = [t["nev"] for t in tetelek]
+                for n in nevek:
+                    print(f"  {PI}- {n}{ALAP}")
+                self._kosar_gyorstar = (time.monotonic(), {
+                    "tetelek": [], "osszesen": 0,
+                    "rendelheto": False,
+                })
+                return {"levettem": nevek, "kosar": [],
+                        "uzenet": f"{len(nevek)} tetelt levettam. A kosar ures.",
+                        "megjegyzes": "Ne hivd a kosar_megmutat-ot, ez a friss kosar."}
+            levettem = []
+            for tetel in list(tetelek):
+                hiba = self._tetelt_kivesz(tetel)
+                if hiba:
+                    maradt = [t["nev"] for t in
+                              (self._kosar_gyorstar or (0, {"tetelek": []}))[1]
+                              ["tetelek"]]
+                    return {"hiba": hiba, "levettem": levettem,
+                            "maradt": maradt,
+                            "megjegyzes": ("ALLJ MEG. A Kifli most nem birja. "
+                                           "Ne vedd ki a tobbit, mondd meg, "
+                                           "mi maradt.")}
+                levettem.append(tetel["nev"])
+            return {"levettem": levettem, "kosar": [],
+                    "uzenet": f"{len(levettem)} tetelt levettam. A kosar ures.",
+                    "megjegyzes": "Ne hivd a kosar_megmutat-ot, ez a friss kosar."}
+
         mit = (termek or "").lower().strip()
         if not mit:
             return {"hiba": "Nem mondtad meg, mit vegyek le."}
@@ -1262,16 +1320,29 @@ class Asszisztens:
             print(f"  {HA}[szaraz] - {tetel['nev']}{ALAP}")
             return {"szaraz_futas": True, "mit_vennek_le": tetel["nev"]}
 
+        hiba = self._tetelt_kivesz(tetel)
+        if hiba:
+            return {"hiba": hiba}
+
+        maradt = (self._kosar_gyorstar or (0, {"tetelek": [], "osszesen": None}))[1]
+        return {"levettem": tetel["nev"],
+                "kosar": [t["nev"] for t in maradt.get("tetelek", [])],
+                "osszeg_ft": maradt.get("osszesen"),
+                "megjegyzes": "Ne hivd a kosar_megmutat-ot, ez a friss kosar."}
+
+    def _tetelt_kivesz(self, tetel):
+        """Egy tetel levetel. None, ha sikerult; hibauzenet, ha nem."""
+        args = {"order_field_id": str(tetel["cart_item_id"])}
+        if tetel.get("product_id") is not None:
+            args["product_id"] = tetel["product_id"]
         try:
-            self.mcp.hiv("remove_from_cart",
-                         {"order_field_id": str(tetel["cart_item_id"])})
-            self._kosar_ervenytelenit()
+            self.mcp.hiv("remove_from_cart", args)
         except MCPHiba as e:
             self._kosar_ervenytelenit()
-            return {"hiba": f"Nem sikerult levenni: {e}"}
-
+            return f"Nem sikerult levenni: {e}"
+        self._kosar_helyben_levesz(tetel["cart_item_id"])
         print(f"  {PI}- {tetel['nev']}{ALAP}")
-        return {"levettem": tetel["nev"]}
+        return None
 
     _kosar_ertelmez = staticmethod(p.kosar_ertelmez)
 

@@ -107,11 +107,9 @@ def rendszer_ellenoriz():
         rendben = False
 
     if van("node") or van("npx"):
-        ok("Node.js megvan (a Kifli kapcsolathoz kell).")
+        ok("Node.js megvan (csak a regi, nem hivatalos MCP-hez kell).")
     else:
-        hiba("Nincs Node.js - enelkul nem megy a Kifli kapcsolat.")
-        info("brew install node" if macos else "sudo apt install nodejs npm")
-        rendben = False
+        info("Nincs Node.js - a hivatalos Kifli MCP-hez nem kell.")
 
     return rendben
 
@@ -168,45 +166,22 @@ def openai_teszt(kulcs):
 
 
 def kifli_teszt(email, jelszo, url="https://www.kifli.hu"):
-    """A rohlik-mcp szerveren keresztul probal bejelentkezni."""
+    """A hivatalos Kifli MCP-n keresztul probal bejelentkezni."""
+    from mcp_kliens import MCPKliens, MCPHiba
     kornyezet = {**os.environ, "ROHLIK_BASE_URL": url,
-                 "ROHLIK_USERNAME": email, "ROHLIK_PASSWORD": jelszo}
-    uzenetek = "\n".join(json.dumps(u) for u in [
-        {"jsonrpc": "2.0", "id": 1, "method": "initialize",
-         "params": {"protocolVersion": "2024-11-05", "capabilities": {},
-                    "clientInfo": {"name": "telepito", "version": "1"}}},
-        {"jsonrpc": "2.0", "method": "notifications/initialized"},
-        {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
-         "params": {"name": "search_products",
-                    "arguments": {"product_name": "tej", "limit": 1}}},
-    ])
+                 "ROHLIK_USERNAME": email, "ROHLIK_PASSWORD": jelszo,
+                 "KIFLI_MCP": "hivatalos"}
     try:
-        eredmeny = subprocess.run(
-            ["npx", "-y", "@tomaspavlin/rohlik-mcp"],
-            input=uzenetek, capture_output=True, text=True,
-            env=kornyezet, timeout=180)
-    except FileNotFoundError:
-        return False, "Nincs npx (Node.js kell)."
-    except subprocess.TimeoutExpired:
-        return False, "Idotullepes - az elso inditas lassu lehet, probald ujra."
-
-    for sor in eredmeny.stdout.splitlines():
-        if not sor.strip().startswith("{"):
-            continue
-        try:
-            valasz = json.loads(sor)
-        except json.JSONDecodeError:
-            continue
-        if valasz.get("id") != 2:
-            continue
-        r = valasz.get("result", {})
-        szoveg = " ".join(d.get("text", "") for d in r.get("content", []))
-        if r.get("isError"):
-            if "401" in szoveg or "Unauthorized" in szoveg:
-                return False, "Hibas email vagy jelszo."
-            return False, szoveg[:150]
-        return True, szoveg.splitlines()[0] if szoveg else "kapcsolat rendben"
-    return False, "Nem kaptam ertelmes valaszt a szervertol."
+        with MCPKliens(kornyezet=kornyezet) as mcp:
+            nyers = mcp.hiv("search_products", {"product_name": "tej"})
+        if not nyers:
+            return False, "Ures valasz a Kifli MCP-tol."
+        return True, "hivatalos MCP kapcsolat rendben"
+    except MCPHiba as e:
+        u = str(e)
+        if "belépés" in u or "401" in u or "Unauthorized" in u:
+            return False, "Hibas email vagy jelszo."
+        return False, u[:150]
 
 
 # ------------------------------------------------------------------ beallitas

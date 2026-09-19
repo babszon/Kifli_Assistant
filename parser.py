@@ -1,14 +1,133 @@
 #!/usr/bin/env python3
 """
-A rohlik-mcp szoveges valaszait strukturalt adatta alakitja.
+A Kifli MCP valaszait strukturalt adatta alakitja.
 
-A szerver ember altal olvashato szoveget ad vissza, nem JSON-t, ezert
-sorrol sorra kell ertelmezni. Ha a szerver formatuma valtozik, ez a
-modul az egyetlen hely, amit modositani kell.
+A hivatalos szerver JSON-t ad; a regi rohlik-mcp ember altal olvashato
+szoveget. Mindket formatumot ez a modul ertelmezi - ha a szerver
+valtozik, ez az egyetlen javitasi pont.
 """
 
 import json
 import re
+
+
+def _json_adat(szoveg):
+    """JSON objektum, vagy None, ha a bemenet sima szoveg."""
+    if isinstance(szoveg, (dict, list)):
+        return szoveg
+    if not isinstance(szoveg, str):
+        return None
+    s = szoveg.strip()
+    if not s or s[0] not in "{[":
+        return None
+    try:
+        return json.loads(s)
+    except json.JSONDecodeError:
+        return None
+
+
+def _mag(adat):
+    """Lefejti a {result: {data: ...}} burkolatot, ha van."""
+    if not isinstance(adat, dict):
+        return adat
+    belso = adat.get("result")
+    if isinstance(belso, dict) and (
+            "results" in belso or "products" in belso or "data" in belso
+            or "items" in belso or "frequent_items" in belso
+            or "xtra" in belso or "address" in belso
+            or "categories" in belso or "success" in belso):
+        return _mag(belso)
+    belso = adat.get("data")
+    if isinstance(belso, dict) and (
+            "items" in belso or "products" in belso or "address" in belso
+            or "xtra" in belso or "categories" in belso):
+        return belso
+    return adat
+
+
+def _kiszereles_szovegbol(szoveg):
+    """'1 l' / '10 db' / 'kb. 120 g' -> (mennyiseg, egyseg)."""
+    t = re.search(r"(?:kb\.?\s*)?([\d.,]+)\s*(\S+)", szoveg or "")
+    if not t:
+        return None, None
+    return _szam(t.group(1)), t.group(2).strip().lower()
+
+
+def _termek_mezok(t):
+    """Egy hivatalos MCP termekobjektum a belso formatumra."""
+    if not isinstance(t, dict):
+        return None
+    pid = t.get("productId", t.get("product_id", t.get("id")))
+    try:
+        pid = int(pid)
+    except (TypeError, ValueError):
+        return None
+    nev = t.get("productName") or t.get("name") or t.get("nev")
+    if not nev:
+        return None
+    ar = t.get("price")
+    if isinstance(ar, dict):
+        ar = ar.get("full") or ar.get("amount")
+    eredeti = t.get("originalPrice") or t.get("originalPricePerUnit")
+    kedvezmeny = t.get("salePercents") or t.get("discount")
+    if kedvezmeny not in (None, 0, 0.0):
+        try:
+            kedvezmeny = -abs(int(kedvezmeny))
+        except (TypeError, ValueError):
+            kedvezmeny = None
+    else:
+        kedvezmeny = None
+    if kedvezmeny is None:
+        for b in t.get("badges") or []:
+            m = re.search(r"(-\d+)\s*%", str(b))
+            if m:
+                kedvezmeny = int(m.group(1))
+                break
+    ppu = t.get("pricePerUnit")
+    egysegar = None
+    if isinstance(ppu, dict):
+        egysegar = ppu.get("full", ppu.get("price"))
+    elif isinstance(ppu, (int, float)):
+        egysegar = ppu
+    textual = t.get("textualAmount") or t.get("volume") or ""
+    mennyiseg, egyseg = _kiszereles_szovegbol(textual)
+    marka = t.get("brand")
+    if marka in (None, "", "null"):
+        marka = None
+    return {
+        "nev": nev, "marka": marka, "ar": ar, "eredeti_ar": eredeti,
+        "kedvezmeny": kedvezmeny, "egysegar": egysegar,
+        "egysegar_egyseg": egyseg, "mennyiseg": mennyiseg, "egyseg": egyseg,
+        "id": pid,
+    }
+
+
+def termekek_jsonbol(adat):
+    """Hivatalos kereses / akcio JSON -> termeklista."""
+    mag = _mag(adat)
+    nyers = []
+    if isinstance(mag, list):
+        nyers = mag
+    elif isinstance(mag, dict):
+        if mag.get("results"):
+            for r in mag["results"]:
+                nyers.extend((r or {}).get("products") or [])
+        elif mag.get("products"):
+            nyers = mag["products"]
+        elif mag.get("items"):
+            items = mag["items"]
+            nyers = list(items.values()) if isinstance(items, dict) else items
+    termekek = []
+    for t in nyers:
+        mezok = _termek_mezok(t)
+        if mezok:
+            if (mezok["kedvezmeny"] is None and mezok["eredeti_ar"]
+                    and mezok["ar"] and mezok["eredeti_ar"] > 0):
+                arany = ((mezok["ar"] - mezok["eredeti_ar"])
+                         / mezok["eredeti_ar"])
+                mezok["kedvezmeny"] = round(arany * 100)
+            termekek.append(mezok)
+    return termekek
 
 # "• Magyar Tej ESL Tej 2,8% (Magyar)"
 # "• Coca-Cola ... multipack (2x1,75l) (-33 % mai szállítással)"
@@ -54,7 +173,12 @@ def termekek_ertelmez(szoveg):
     """
     A search_products ES a get_discounted_items kimenetet is ertelmezi.
     A ket vegpont mas formatumot ad, ezert mindketto eseteit kezeli.
+    A hivatalos MCP JSON-jat is elfogadja.
     """
+    json_adat = _json_adat(szoveg)
+    if json_adat is not None:
+        return termekek_jsonbol(json_adat)
+
     termekek = []
     aktualis = None
 
@@ -130,8 +254,45 @@ def termekek_ertelmez(szoveg):
     return termekek
 
 
+def gyakori_jsonbol(adat):
+    """Hivatalos get_typical_order JSON -> [{id, nev, rendelesek}]."""
+    mag = _mag(adat)
+    nyers = []
+    if isinstance(mag, dict):
+        if mag.get("frequent_items"):
+            nyers = mag["frequent_items"]
+        elif isinstance(mag.get("items"), dict):
+            for kulcs, t in mag["items"].items():
+                if isinstance(t, dict):
+                    nyers.append({**t, "product_id": t.get("product_id") or kulcs})
+        elif isinstance(mag.get("items"), list):
+            nyers = mag["items"]
+    tetelek = []
+    for t in nyers:
+        if not isinstance(t, dict):
+            continue
+        pid = t.get("product_id", t.get("productId", t.get("id")))
+        try:
+            pid = int(pid)
+        except (TypeError, ValueError):
+            continue
+        nev = t.get("name") or t.get("productName") or t.get("nev")
+        if not nev:
+            continue
+        tetelek.append({
+            "id": pid, "nev": nev,
+            "kategoria": t.get("category"),
+            "rendelesek": t.get("frequency") or t.get("rendelesek"),
+        })
+    return tetelek
+
+
 def gyakori_ertelmez(szoveg):
-    """A get_frequent_items kimenetet listava alakitja."""
+    """A get_frequent_items / get_typical_order kimenetet listava alakitja."""
+    json_adat = _json_adat(szoveg)
+    if json_adat is not None:
+        return gyakori_jsonbol(json_adat)
+
     tetelek = []
     aktualis = None
 
@@ -185,12 +346,53 @@ def kimert_e(termek):
 RE_KATEGORIA = re.compile(r"[•\-\*]\s*(.+?)\s*\(ID:\s*(\d+)\)")
 
 
+def kosar_jsonbol(adat):
+    """Hivatalos get_cart JSON -> {tetelek, osszesen, rendelheto}."""
+    mag = _mag(adat)
+    if isinstance(mag, list):
+        mag = mag[0] if mag else {}
+    items = mag.get("items") if isinstance(mag, dict) else None
+    if isinstance(items, dict):
+        nyers = list(items.values())
+    elif isinstance(items, list):
+        nyers = items
+    else:
+        nyers = []
+    tetelek = []
+    for t in nyers:
+        if not isinstance(t, dict):
+            continue
+        pid = t.get("productId") or t.get("product_id")
+        cart_id = t.get("orderFieldId") or t.get("cart_item_id") or pid
+        nev = t.get("productName") or t.get("name")
+        if not nev or cart_id is None:
+            continue
+        tetelek.append({
+            "nev": nev,
+            "marka": t.get("brand"),
+            "darab": int(t.get("quantity") or 1),
+            "ar": t.get("price"),
+            "kategoria": t.get("primaryCategoryName") or t.get("category"),
+            "cart_item_id": str(cart_id),
+            "product_id": int(pid) if pid is not None else None,
+        })
+    osszesen = mag.get("totalPrice") if isinstance(mag, dict) else None
+    rendelheto = mag.get("submitConditionPassed") if isinstance(mag, dict) else None
+    return {"tetelek": tetelek, "osszesen": osszesen,
+            "rendelheto": rendelheto}
+
+
 def kosar_ertelmez(nyers):
     """
-    A get_cart_content szoveges kimenetenek ertelmezese.
+    A kosar ertelmezese.
 
-    A 'Cart ID' kell a remove_from_cart-hoz - NEM a termek ID-ja.
+    A hivatalos MCP JSON-t ad; a regi szerver szoveget, ahol a
+    'Cart ID' kell a remove_from_cart-hoz - NEM a termek ID-ja.
     """
+    json_adat = _json_adat(nyers)
+    if json_adat is not None:
+        return kosar_jsonbol(json_adat)
+
     tetelek = []
     osszesen = None
     rendelheto = None
@@ -251,9 +453,27 @@ def kosar_ertelmez(nyers):
 
 
 def elofizetes_ertelmez(nyers):
-    """A get_premium_info szoveges kimenetebol a lenyeg."""
+    """A get_premium_info / get_user_info kimenetebol a lenyeg."""
     adatok = {"aktiv": None}
     if not nyers:
+        return adatok
+
+    json_adat = _json_adat(nyers)
+    if json_adat is not None:
+        mag = _mag(json_adat)
+        xtra = mag.get("xtra") if isinstance(mag, dict) else None
+        if not isinstance(xtra, dict):
+            xtra = mag.get("premium") if isinstance(mag, dict) else None
+        if isinstance(xtra, dict):
+            adatok["aktiv"] = bool(xtra.get("active"))
+            if xtra.get("membership_type"):
+                adatok["tipus"] = xtra["membership_type"]
+            if xtra.get("active_until"):
+                adatok["lejar"] = xtra["active_until"]
+            if xtra.get("remaining_days") is not None:
+                adatok["maradt"] = xtra["remaining_days"]
+        elif isinstance(mag, dict) and mag.get("active") is not None:
+            adatok["aktiv"] = bool(mag["active"])
         return adatok
 
     t = re.search(r"PREMIUM STATUS:\s*(\w+)", nyers, re.I)
@@ -383,6 +603,18 @@ def idosavok_ertelmez(nyers):
 
 def akcio_kategoriak_ertelmez(szoveg):
     """A get_discounted_items list_categories=True kimenete."""
+    json_adat = _json_adat(szoveg)
+    if json_adat is not None:
+        mag = _mag(json_adat)
+        kategoriak = []
+        for k in (mag.get("categories") or []) if isinstance(mag, dict) else []:
+            if isinstance(k, dict) and k.get("id") is not None:
+                kategoriak.append({
+                    "nev": (k.get("name") or k.get("nev") or "").strip(),
+                    "id": int(k["id"]),
+                })
+        return kategoriak
+
     kategoriak = []
     for sor in (szoveg or "").splitlines():
         t = RE_KATEGORIA.search(sor)
