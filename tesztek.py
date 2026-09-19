@@ -118,6 +118,12 @@ GYAKORI = """🛒 MOST FREQUENTLY PURCHASED ITEMS
    📊 8× orders • 8 units
    🆔 60476"""
 
+KATEGORIAK = """Available sales categories:
+
+• Ments meg! (ID: 300118)
+• Akció a hét minden napján (ID: 300119)
+• Tejtermék és tojás (ID: 300120)"""
+
 PREMIUM = """⭐ PREMIUM STATUS: Active
 
 📅 SUBSCRIPTION:
@@ -190,6 +196,8 @@ class HamisMCP:
         if nev in self.hibas_toolok:
             from mcp_kliens import MCPHiba
             raise MCPHiba(f"{nev}: szandekos hiba")
+        if nev == "get_discounted_items" and (args or {}).get("list_categories"):
+            return KATEGORIAK
         return {
             "search_products": KERESES,
             "get_discounted_items": AKCIOK,
@@ -201,6 +209,7 @@ class HamisMCP:
             "get_upcoming_orders": "Nincs beutemezett rendeles.",
             "get_meal_suggestions": "Reggeli:\n• Kenyér\n• Tojás",
             "get_premium_info": PREMIUM,
+            "_kategoriak": KATEGORIAK,
             "get_account_data": FIOK,
         }.get(nev, "ok")
 
@@ -525,6 +534,42 @@ def _():
     assert r.get("szaraz_futas")
     assert not any(n == "add_to_cart" for n, _ in mcp.naplo), mcp.naplo
     assert "figyelmeztetes" in r, "az LLM-nek tudnia kell, hogy proba volt"
+
+
+@teszt("akcio_kategoriak: kiolvassa a szekciokat (pl. Ments meg)")
+def _():
+    a = uj_asszisztens()
+    r = a.akcio_kategoriak()
+    nevek = [k["nev"] for k in r["kategoriak"]]
+    assert "Ments meg!" in nevek, nevek
+    ments = next(k for k in r["kategoriak"] if k["nev"] == "Ments meg!")
+    assert ments["id"] == 300118
+
+
+@teszt("akciok_most: tipus es kategoria atmegy a Kiflihez")
+def _():
+    mcp = HamisMCP()
+    a = uj_asszisztens(mcp)
+    mcp.naplo.clear()
+    a.akciok_most(tipus="week-sales", kategoria_id=300118, darab=5)
+    hivas = next(h for h in mcp.naplo if h[0] == "get_discounted_items")
+    assert hivas[1]["sale_type"] == "week-sales", hivas
+    assert hivas[1]["category_id"] == 300118, hivas
+
+
+@teszt("ures akcios szekcional nem talal ki terméket")
+def _():
+    class Ures(HamisMCP):
+        def hiv(self, nev, args=None):
+            if nev == "get_discounted_items" and not (args or {}).get(
+                    "list_categories"):
+                return "No discounted items found."
+            return super().hiv(nev, args)
+
+    a = uj_asszisztens(Ures())
+    r = a.akciok_most(tipus="bundles")
+    assert r["termekek"] == []
+    assert "NE talalj ki" in r.get("megjegyzes", "")
 
 
 @teszt("elofizetes: kiolvassa az allapotot es a kedvezmenyeket")

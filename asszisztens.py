@@ -185,6 +185,13 @@ DONTESI ELVEK
 - Ha azt kerdezi, mit szokott venni vagy akcios-e a szokasos, hivd a
   szokasos_termekek eszkozt.
 - Ha ALTALANOSSAGBAN kerdez az akciokrol, az akciok_most eszkozt hivd.
+- Ha egy KONKRET AKCIOS SZEKCIOT emlit nev szerint - peldaul "Ments
+  meg" (kozeli lejaratu termekek), "a het akcioi", "tobbet olcsobban" -,
+  eloszor hivd az akcio_kategoriak eszkozt, keresd meg a nevhez tartozo
+  azonositot, es azzal hivd az akciok_most eszkozt. SOHA ne mondd, hogy
+  nem tudsz ranezni egy szekciora, amig ezt meg nem probaltad.
+  A 'tipus' parameter kulon szekciokat is elerhetove tesz:
+  week-sales, multipack, bundles, premium-sales, favorite-sales.
 - Ha azt kerdezi, mit rendelt korabban, a korabbi_rendelesek eszkozzel
   kezdd. A tetelekhez utana a rendeles_reszletei kell.
 - "Ugyanazt kerem, mint legutobb" eseten: korabbi_rendelesek, majd a
@@ -389,17 +396,46 @@ ESZKOZOK = [
         },
         {
             "name": "akciok_most",
-            "description": ("A jelenleg akcios termekek. Akkor hivd, ha a "
-                            "felhasznalo altalanossagban kerdez az akciokrol. "
-                            "Ha azt kerdezi, hogy a SZOKASOS termekei "
-                            "akciosak-e, a szokasos_termekek eszkozt hivd."),
+            "description": (
+                "A jelenleg akcios termekek. Akkor hivd, ha a felhasznalo "
+                "altalanossagban kerdez az akciokrol, vagy egy adott "
+                "akciotipusra kivancsi. Ha azt kerdezi, hogy a SZOKASOS "
+                "termekei akciosak-e, a szokasos_termekek eszkozt hivd."),
             "parameters": {
                 "type": "object",
                 "properties": {
+                    "tipus": {
+                        "type": "string",
+                        "enum": ["sales", "week-sales", "multipack",
+                                 "bundles", "premium-sales",
+                                 "favorite-sales"],
+                        "description":
+                            "sales = minden akcio (alap); week-sales = a "
+                            "het akcioi; multipack = tobbet olcsobban; "
+                            "bundles = termekcsomagok; premium-sales = csak "
+                            "Xtra elofizetoknek; favorite-sales = nepszeru "
+                            "akciok"},
+                    "kategoria_id": {
+                        "type": "integer",
+                        "description":
+                            "Egy kategoriara szukites. Az azonositokat az "
+                            "akcio_kategoriak eszkoz adja meg. Ha a "
+                            "felhasznalo egy szekciot emlit nev szerint "
+                            "(peldaul 'Ments meg'), eloszor azt hivd."},
                     "darab": {"type": "integer",
                               "description": "hany terméket (1-50)"},
                 },
             },
+        },
+        {
+            "name": "akcio_kategoriak",
+            "description": (
+                "A Kifli akcios szekcioinak listaja nevvel es azonositoval. "
+                "Akkor hivd, ha a felhasznalo egy konkret szekciot emlit "
+                "nev szerint - peldaul 'Ments meg' (kozeli lejaratu "
+                "termekek) -, es meg kell talalnod hozza az azonositot. "
+                "Ne talalgasd az azonositot, mindig ebbol dolgozz."),
+            "parameters": {"type": "object", "properties": {}},
         },
         {
             "name": "elofizetesem",
@@ -941,30 +977,88 @@ class Asszisztens:
         self._nyers_kiir("beutemezett rendelesek", nyers)
         return {"rendelesek": nyers[:2000]}
 
-    def akciok_most(self, darab=20):
-        akciok = self._akciok()
-        if not akciok:
-            return {"termekek": [], "uzenet": "Most nincs akcios termek."}
+    def akcio_kategoriak(self):
+        """
+        A Kifli akcios szekcioinak listaja.
 
-        rendezett = sorted(akciok.values(),
-                           key=lambda t: t.get("kedvezmeny") or 0)[:darab]
-        for t in rendezett:
-            if t.get("ar"):
-                self.arak_szerint[t["id"]] = t["ar"]
-        self._talalatokat_megjegyez(rendezett)
+        Ez azert kell, mert a szekciok nevei boltonkent es idoben is
+        valtoznak (pl. 'Ments meg' a kozeli lejaratu termekekre). Az
+        azonositokat sosem talaljuk ki - mindig innen vesszuk.
+        """
+        try:
+            nyers = self.mcp.hiv("get_discounted_items",
+                                 {"list_categories": True})
+        except MCPHiba as e:
+            return {"hiba": str(e)}
 
-        print(f"\n{HA}  {len(rendezett)} akcios termek{ALAP}")
-        for t in rendezett[:10]:
+        kategoriak = []
+        for sor in (nyers or "").splitlines():
+            t = re.search(r"[•\-\*]\s*(.+?)\s*\(ID:\s*(\d+)\)", sor)
+            if t:
+                kategoriak.append({"nev": t.group(1).strip(),
+                                   "id": int(t.group(2))})
+
+        if not kategoriak:
+            return {"kategoriak": [],
+                    "uzenet": "Nem sikerult kiolvasni a szekciokat.",
+                    "nyers_reszlet": (nyers or "")[:800]}
+
+        print(f"\n{HA}  {len(kategoriak)} akcios szekcio:{ALAP}")
+        for k in kategoriak[:15]:
+            print(f"  {HA}{k['nev'][:46]:48} (ID {k['id']}){ALAP}")
+
+        return {"kategoriak": kategoriak,
+                "megjegyzes": ("Az azonositot add at az akciok_most eszkoz "
+                               "'kategoria_id' parametereben.")}
+
+    def akciok_most(self, tipus="sales", kategoria_id=None, darab=20):
+        try:
+            darab = max(1, min(50, int(darab)))
+        except (TypeError, ValueError):
+            darab = 20
+
+        # Alapesetben a gyorstarazott 'sales' + 'premium-sales' halmaz;
+        # konkret tipusnal vagy kategorianal frissen kerjuk le
+        if tipus == "sales" and kategoria_id is None:
+            akciok = self._akciok()
+            termekek = sorted(akciok.values(),
+                              key=lambda t: t.get("kedvezmeny") or 0)[:darab]
+        else:
+            keres = {"sale_type": tipus, "limit": darab}
+            if kategoria_id is not None:
+                keres["category_id"] = int(kategoria_id)
+            try:
+                nyers = self.mcp.hiv("get_discounted_items", keres)
+            except MCPHiba as e:
+                return {"hiba": str(e)}
+            termekek = arak.rangsorol(p.termekek_ertelmez(nyers))
+            termekek.sort(key=lambda t: t.get("kedvezmeny") or 0)
+
+        if not termekek:
+            return {"termekek": [],
+                    "uzenet": f"Ebben a szekcioban ({tipus}"
+                              + (f", kategoria {kategoria_id}"
+                                 if kategoria_id else "")
+                              + ") most nincs termek.",
+                    "megjegyzes": ("Mondd meg oszinten, hogy nem talaltal "
+                                   "semmit. NE talalj ki terméket.")}
+
+        self._talalatokat_megjegyez(termekek)
+
+        print(f"\n{HA}  {len(termekek)} akcios termek ({tipus}){ALAP}")
+        for t in termekek[:10]:
             ar = f"{t['ar']:,.0f} Ft".replace(",", " ") if t.get("ar") else "?"
-            print(f"  {HA}{t['nev'][:44]:46} {ar:>10}{ALAP} "
-                  f"{PI}{t['kedvezmeny']}%{ALAP}")
+            kedv = f"{PI}{t['kedvezmeny']}%{ALAP}" if t.get("kedvezmeny") else ""
+            print(f"  {HA}{t['nev'][:44]:46} {ar:>10}{ALAP} {kedv}")
 
-        return {"termekek": [{
-            "id": t["id"], "nev": t["nev"], "ar": t.get("ar"),
-            "kedvezmeny": t.get("kedvezmeny"),
-            "kiszereles": (f"{t['mennyiseg']:g} {t['egyseg']}"
-                           if t.get("mennyiseg") else None),
-        } for t in rendezett]}
+        return {"tipus": tipus, "kategoria_id": kategoria_id,
+                "termekek": [{
+                    "id": t["id"], "nev": t["nev"], "ar": t.get("ar"),
+                    "kedvezmeny": t.get("kedvezmeny"),
+                    "egysegar": arak.egysegar_szoveg(t) or None,
+                    "kiszereles": (f"{t['mennyiseg']:g} {t['egyseg']}"
+                                   if t.get("mennyiseg") else None),
+                } for t in termekek]}
 
     @staticmethod
     def _nyers_kiir(cimke, nyers, sorok=12):
