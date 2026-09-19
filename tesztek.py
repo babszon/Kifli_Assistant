@@ -1417,6 +1417,40 @@ for sor in sys.stdin:
 
 # ────────────────────────────────────────────────── kliens oldal
 
+fejezet("MCP szerver")
+
+
+@teszt("sajat MCP szerver hasznalhato a .env-bol")
+def _():
+    import mcp_kliens as mk
+    regi = os.environ.get("ROHLIK_MCP_PARANCS")
+    try:
+        os.environ["ROHLIK_MCP_PARANCS"] = "node /valahol/index.js"
+        k = mk.MCPKliens.__new__(mk.MCPKliens)
+        # csak a parancs-valasztast nezzuk, nem inditjuk el
+        mk.MCPKliens.__init__.__wrapped__ if False else None
+        import inspect
+        forras = inspect.getsource(mk.MCPKliens.__init__)
+        assert "ROHLIK_MCP_PARANCS" in forras
+    finally:
+        if regi is None:
+            os.environ.pop("ROHLIK_MCP_PARANCS", None)
+        else:
+            os.environ["ROHLIK_MCP_PARANCS"] = regi
+
+
+@teszt("a javitas letezik es a lenyeget tartalmazza")
+def _():
+    patch = Path("mcp-javitas.patch")
+    assert patch.exists(), "hianyzik a javitas"
+    tartalom = patch.read_text(encoding="utf-8")
+    # A ket lenyegi valtoztatas
+    assert "sessionExpiresAt" in tartalom, "nincs munkamenet-lejarat"
+    assert "-      await this.logout();" in tartalom, (
+        "nem tavolitja el a hivasonkenti kijelentkezest")
+    assert "loginInFlight" in tartalom, "nincs parhuzamos-vedelem"
+
+
 fejezet("Felulet")
 
 

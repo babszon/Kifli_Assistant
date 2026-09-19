@@ -13,7 +13,7 @@ Magyarul, úgy ahogy tényleg beszélsz — „harminc deka trappistát”,
 ![Python](https://img.shields.io/badge/Python-3.9+-132B52?style=flat-square&labelColor=0F2342)
 ![OpenAI Realtime](https://img.shields.io/badge/OpenAI-Realtime-132B52?style=flat-square&labelColor=0F2342)
 ![Magyar](https://img.shields.io/badge/nyelv-magyar-C8322B?style=flat-square&labelColor=0F2342)
-![Tesztek](https://img.shields.io/badge/tesztek-77-7FB069?style=flat-square&labelColor=0F2342)
+![Tesztek](https://img.shields.io/badge/tesztek-79-7FB069?style=flat-square&labelColor=0F2342)
 ![Licenc](https://img.shields.io/badge/licenc-MIT-7FB069?style=flat-square&labelColor=0F2342)
 
 </div>
@@ -159,7 +159,27 @@ source .venv/bin/activate          # Windows: .venv\Scripts\activate
 
 pip install -r requirements.txt
 python3 telepites.py
+python3 mcp_javitas.py      # ajánlott, lásd lent
 ```
+
+<details>
+<summary><b>Miért kell a <code>mcp_javitas.py</code></b></summary>
+
+<br>
+
+A `rohlik-mcp` minden API-hívás előtt bejelentkezik, és a hívás végén
+rögtön ki is jelentkezik — tizenhat metódus, mind így. Egy 15 tételes
+bevásárlólista ezért **30-nál is több bejelentkezést** jelent, és a
+bejelentkezési végpont a legszigorúbban korlátozott. Innen jött a
+`HTTP 429` pár termék után.
+
+A javítás újrahasznosítja a munkamenetet: **30+ bejelentkezés helyett
+egy**. A script letölti a forrást, alkalmazza a javítást, lefordítja, és
+beállítja a `.env`-ben.
+
+A program enélkül is működik, csak lassabban és több várakozással.
+
+</details>
 
 A telepítő végigvezet mindenen: ellenőrzi a rendszert, bekéri az OpenAI
 kulcsot és a Kifli belépési adataidat, **teszteli a kapcsolatokat**, és
@@ -309,7 +329,8 @@ Az API kulcs a Python oldalon marad, nem kerül ki a böngészőbe.
 | `llm.py` | a magyar szöveg normalizálása |
 | `szinkron.py` | listából kosár, beszélgetés nélkül |
 | `api.py` | telefonos gyorsfelvétel (Siri) |
-| `tesztek.py` | 77 funkcionális teszt, hálózat nélkül |
+| `mcp_javitas.py` | a Kifli-kapcsolat munkamenet-javítása |
+| `tesztek.py` | 79 funkcionális teszt, hálózat nélkül |
 | `ellenorzes.py` | statikus ellenőrzés |
 | `Dockerfile` | szerveres futtatás (NAS, VPS) |
 
@@ -371,11 +392,10 @@ szinkronizálásnál történik, egyszer.
 - A Kifli időnként más árat számol, mint ami a keresőben látszik
   (akciók, kimért áruk). Ilyenkor a kosár ára az igaz, és az asszisztens
   azt mondja.
-- **A Kifli rátakorlátot szab.** Sok termék egyszerre, vagy sűrű
-  használat után lassít. A program magától vár és újrapróbál, és a
-  tanult termékeknél nem is keres — de ha tartósan blokkol, pár percet
-  kell várni. A korlát megkerülése nem cél: az a Kifli szerverei elleni
-  szándékos terhelés lenne.
+- **A Kifli rátakorlátot szab.** A `mcp_javitas.py` és a tanult termékek
+  után ebbe ritkán futsz bele, de sűrű használatnál előfordul. Ilyenkor
+  a program vár és újrapróbál. A korlát aktív megkerülése nem cél: az a
+  Kifli szerverei elleni szándékos terhelés lenne.
 - **A kézírás felismerése nem tökéletes.** Ezért minden bizonytalan
   tételre rákérdez, ahelyett hogy találgatna. Ha a kép széle levágja a
   sort, azt is jelzi — újrafotózás kell.
@@ -389,7 +409,7 @@ szinkronizálásnál történik, egyszer.
 ## Fejlesztés
 
 ```bash
-python3 tesztek.py       # 77 funkcionális teszt, hálózat nélkül
+python3 tesztek.py       # 79 funkcionális teszt, hálózat nélkül
 python3 ellenorzes.py    # statikus ellenőrzés
 ```
 

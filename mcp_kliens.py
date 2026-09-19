@@ -47,7 +47,17 @@ class MCPRataHiba(MCPHiba):
 
 class MCPKliens:
     def __init__(self, parancs=None, kornyezet=None, csendes=True):
-        self.parancs = parancs or ["npx", "-y", "@tomaspavlin/rohlik-mcp"]
+        # A sajat, javitott valtozat elsobbseget elvez. A kozzetett
+        # rohlik-mcp minden hivasnal be- ES kijelentkezik, ami egy 15
+        # tételes listanal 30+ bejelentkezest jelent - innen jon a
+        # HTTP 429. A javitott valtozatot a mcp_javitas.py keszíti el.
+        sajat = os.environ.get("ROHLIK_MCP_PARANCS")
+        if parancs:
+            self.parancs = parancs
+        elif sajat:
+            self.parancs = sajat.split()
+        else:
+            self.parancs = ["npx", "-y", "@tomaspavlin/rohlik-mcp"]
         self.kornyezet = {**os.environ, **(kornyezet or {})}
         self.csendes = csendes
         self.proc = None

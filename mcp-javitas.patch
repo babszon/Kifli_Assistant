@@ -1,0 +1,679 @@
+diff --git a/src/rohlik-api.ts b/src/rohlik-api.ts
+index a8e7252..765ebed 100644
+--- a/src/rohlik-api.ts
++++ b/src/rohlik-api.ts
+@@ -19,6 +19,15 @@ export class RohlikAPI {
+   private lastRequestTime: number = 0;
+   private readonly minRequestInterval: number = 100; // Minimum 100ms between requests
+ 
++  // Session reuse. Previously every public method called login() and then
++  // logout() in a finally block, so a 15-item shopping list caused 30+
++  // logins. Login endpoints are the most aggressively rate-limited, which
++  // produced HTTP 429 after a handful of items. We now log in once and
++  // reuse the session until it expires.
++  private sessionExpiresAt: number = 0;
++  private loginInFlight: Promise<void> | null = null;
++  private readonly sessionTtlMs: number = 25 * 60 * 1000; // 25 minutes
++
+   constructor(credentials: RohlikCredentials) {
+     this.credentials = credentials;
+   }
+@@ -70,6 +79,12 @@ export class RohlikAPI {
+       this.sessionCookies = setCookieHeader;
+     }
+ 
++    // If the server rejects us, the stored session is no longer usable.
++    // Invalidating it here means the next login() actually re-authenticates.
++    if (response.status === 401 || response.status === 403) {
++      this.sessionExpiresAt = 0;
++    }
++
+     if (!response.ok) {
+       throw new RohlikAPIError(`HTTP ${response.status}: ${response.statusText}`, response.status);
+     }
+@@ -77,7 +92,25 @@ export class RohlikAPI {
+     return await response.json() as RohlikAPIResponse<T>;
+   }
+ 
+-  async login(): Promise<void> {
++  /**
++   * Ensures an authenticated session exists. Reuses the current session
++   * while it is still valid, and collapses concurrent callers into a
++   * single login request.
++   */
++  async login(force: boolean = false): Promise<void> {
++    if (!force && this.sessionCookies && Date.now() < this.sessionExpiresAt) {
++      return;
++    }
++    if (this.loginInFlight) {
++      return this.loginInFlight;
++    }
++    this.loginInFlight = this.performLogin().finally(() => {
++      this.loginInFlight = null;
++    });
++    return this.loginInFlight;
++  }
++
++  private async performLogin(): Promise<void> {
+     const loginData = {
+       email: this.credentials.username,
+       password: this.credentials.password,
+@@ -100,6 +133,9 @@ export class RohlikAPI {
+       // Accept both 200 (OK) and 202 (Accepted) as successful responses
+       const isSuccess = response.status === 200 || response.status === 202 || response.status === undefined;
+ 
++      // The session is usable from now on
++      this.sessionExpiresAt = Date.now() + this.sessionTtlMs;
++
+       if (!isSuccess) {
+         if (response.status === 401 || response.status === 403) {
+           throw new RohlikAPIError('Invalid credentials - please check your username and password', response.status);
+@@ -149,6 +185,8 @@ export class RohlikAPI {
+         throw new RohlikAPIError(`Login failed: ${error.message}`);
+       }
+ 
++      this.sessionCookies = '';
++      this.sessionExpiresAt = 0;
+       throw new RohlikAPIError('Login failed: Unknown error occurred');
+     }
+   }
+@@ -158,6 +196,7 @@ export class RohlikAPI {
+       method: 'POST'
+     });
+     this.sessionCookies = '';
++    this.sessionExpiresAt = 0;
+   }
+ 
+   async searchProducts(
+@@ -166,113 +205,98 @@ export class RohlikAPI {
+     favouriteOnly: boolean = false
+   ): Promise<SearchResult[]> {
+     await this.login();
++    const searchParams = new URLSearchParams({
++      search: productName,
++      offset: '0',
++      limit: String(limit + 5),
++      companyId: '1',
++      filterData: JSON.stringify({ filters: [] }),
++      canCorrect: 'true'
++    });
+ 
+-    try {
+-      const searchParams = new URLSearchParams({
+-        search: productName,
+-        offset: '0',
+-        limit: String(limit + 5),
+-        companyId: '1',
+-        filterData: JSON.stringify({ filters: [] }),
+-        canCorrect: 'true'
+-      });
++    const response = await this.makeRequest<any>(`/services/frontend-service/search-metadata?${searchParams}`);
++    
++    let products = response.data?.productList || [];
+ 
+-      const response = await this.makeRequest<any>(`/services/frontend-service/search-metadata?${searchParams}`);
+-      
+-      let products = response.data?.productList || [];
++    // Remove sponsored content
++    products = products.filter((p: any) => 
++      !p.badge?.some((badge: any) => badge.slug === 'promoted')
++    );
+ 
+-      // Remove sponsored content
+-      products = products.filter((p: any) => 
+-        !p.badge?.some((badge: any) => badge.slug === 'promoted')
+-      );
++    // Filter favourites if requested
++    if (favouriteOnly) {
++      products = products.filter((p: any) => p.favourite);
++    }
+ 
+-      // Filter favourites if requested
+-      if (favouriteOnly) {
+-        products = products.filter((p: any) => p.favourite);
++    // Limit results
++    products = products.slice(0, limit);
++
++    return products.map((p: any) => {
++      const activeSale = p.sales?.find((s: any) => s.active);
++      const result: any = {
++        id: p.productId,
++        name: p.productName,
++        price: `${p.price.full} ${p.price.currency}`,
++        brand: p.brand,
++        amount: p.textualAmount
++      };
++      if (activeSale) {
++        result.salePrice = `${activeSale.price.full} ${activeSale.price.currency}`;
++        result.originalPrice = `${activeSale.originalPrice.full} ${activeSale.originalPrice.currency}`;
++        result.discountPercentage = activeSale.discountPercentage;
++        result.saleType = activeSale.type;
+       }
+-
+-      // Limit results
+-      products = products.slice(0, limit);
+-
+-      return products.map((p: any) => {
+-        const activeSale = p.sales?.find((s: any) => s.active);
+-        const result: any = {
+-          id: p.productId,
+-          name: p.productName,
+-          price: `${p.price.full} ${p.price.currency}`,
+-          brand: p.brand,
+-          amount: p.textualAmount
+-        };
+-        if (activeSale) {
+-          result.salePrice = `${activeSale.price.full} ${activeSale.price.currency}`;
+-          result.originalPrice = `${activeSale.originalPrice.full} ${activeSale.originalPrice.currency}`;
+-          result.discountPercentage = activeSale.discountPercentage;
+-          result.saleType = activeSale.type;
+-        }
+-        return result;
+-      });
+-    } finally {
+-      await this.logout();
+-    }
++      return result;
++    });
+   }
+ 
+   async addToCart(products: Product[]): Promise<number[]> {
+     await this.login();
++    const addedProducts: number[] = [];
+ 
+-    try {
+-      const addedProducts: number[] = [];
+-
+-      for (const product of products) {
+-        try {
+-          const payload = {
+-            actionId: null,
+-            productId: product.product_id,
+-            quantity: product.quantity,
+-            recipeId: null,
+-            source: 'true:Shopping Lists'
+-          };
+-
+-          await this.makeRequest('/services/frontend-service/v2/cart', {
+-            method: 'POST',
+-            body: JSON.stringify(payload)
+-          });
+-
+-          addedProducts.push(product.product_id);
+-        } catch (error) {
+-          console.error(`Failed to add product ${product.product_id}:`, error);
+-        }
+-      }
++    for (const product of products) {
++      try {
++        const payload = {
++          actionId: null,
++          productId: product.product_id,
++          quantity: product.quantity,
++          recipeId: null,
++          source: 'true:Shopping Lists'
++        };
++
++        await this.makeRequest('/services/frontend-service/v2/cart', {
++          method: 'POST',
++          body: JSON.stringify(payload)
++        });
+ 
+-      return addedProducts;
+-    } finally {
+-      await this.logout();
++        addedProducts.push(product.product_id);
++      } catch (error) {
++        console.error(`Failed to add product ${product.product_id}:`, error);
++      }
+     }
++
++    return addedProducts;
+   }
+ 
+   async getCartContent(): Promise<CartContent> {
+     await this.login();
+-
+-    try {
+-      const response = await this.makeRequest<any>('/services/frontend-service/v2/cart');
+-      const data = response.data || {};
+-
+-      return {
+-        total_price: data.totalPrice || 0,
+-        total_items: Object.keys(data.items || {}).length,
+-        can_make_order: data.submitConditionPassed || false,
+-        products: Object.entries(data.items || {}).map(([productId, productData]: [string, any]) => ({
+-          id: productId,
+-          cart_item_id: productData.orderFieldId || '',
+-          name: productData.productName || '',
+-          quantity: productData.quantity || 0,
+-          price: productData.price || 0,
+-          category_name: productData.primaryCategoryName || '',
+-          brand: productData.brand || ''
+-        }))
+-      };
+-    } finally {
+-      await this.logout();
+-    }
++    const response = await this.makeRequest<any>('/services/frontend-service/v2/cart');
++    const data = response.data || {};
++
++    return {
++      total_price: data.totalPrice || 0,
++      total_items: Object.keys(data.items || {}).length,
++      can_make_order: data.submitConditionPassed || false,
++      products: Object.entries(data.items || {}).map(([productId, productData]: [string, any]) => ({
++        id: productId,
++        cart_item_id: productData.orderFieldId || '',
++        name: productData.productName || '',
++        quantity: productData.quantity || 0,
++        price: productData.price || 0,
++        category_name: productData.primaryCategoryName || '',
++        brand: productData.brand || ''
++      }))
++    };
+   }
+ 
+   async removeFromCart(orderFieldId: string): Promise<boolean> {
+@@ -286,213 +310,161 @@ export class RohlikAPI {
+     } catch (error) {
+       console.error(`Failed to remove item ${orderFieldId}:`, error);
+       return false;
+-    } finally {
+-      await this.logout();
+     }
+   }
+ 
+   async getShoppingList(shoppingListId: string): Promise<{ name: string; products: any[] }> {
+     await this.login();
+-
+-    try {
+-      const response = await this.makeRequest<any>(`/api/v1/shopping-lists/id/${shoppingListId}`);
+-      // Handle both wrapped and direct responses
+-      const listData = response.data || response;
+-      return {
+-        name: listData?.name || 'Unknown List',
+-        products: listData?.products || []
+-      };
+-    } finally {
+-      await this.logout();
+-    }
++    const response = await this.makeRequest<any>(`/api/v1/shopping-lists/id/${shoppingListId}`);
++    // Handle both wrapped and direct responses
++    const listData = response.data || response;
++    return {
++      name: listData?.name || 'Unknown List',
++      products: listData?.products || []
++    };
+   }
+ 
+   async getAccountData(): Promise<AccountData> {
+     await this.login();
++    const result: AccountData = {};
++    
++    // Define endpoints similar to the Python implementation
++    const endpoints = {
++      delivery: '/services/frontend-service/first-delivery?reasonableDeliveryTime=true',
++      next_order: '/api/v3/orders/upcoming',
++      announcements: '/services/frontend-service/announcements/top',
++      bags: '/api/v1/reusable-bags/user-info',
++      timeslot: '/services/frontend-service/v1/timeslot-reservation',
++      last_order: '/api/v3/orders/delivered?offset=0&limit=1',
++      premium_profile: '/services/frontend-service/premium/profile',
++      delivery_announcements: '/services/frontend-service/announcements/delivery',
++      delivered_orders: '/api/v3/orders/delivered?offset=0&limit=50'
++    };
+ 
+-    try {
+-      const result: AccountData = {};
+-      
+-      // Define endpoints similar to the Python implementation
+-      const endpoints = {
+-        delivery: '/services/frontend-service/first-delivery?reasonableDeliveryTime=true',
+-        next_order: '/api/v3/orders/upcoming',
+-        announcements: '/services/frontend-service/announcements/top',
+-        bags: '/api/v1/reusable-bags/user-info',
+-        timeslot: '/services/frontend-service/v1/timeslot-reservation',
+-        last_order: '/api/v3/orders/delivered?offset=0&limit=1',
+-        premium_profile: '/services/frontend-service/premium/profile',
+-        delivery_announcements: '/services/frontend-service/announcements/delivery',
+-        delivered_orders: '/api/v3/orders/delivered?offset=0&limit=50'
+-      };
+-
+-      // Fetch data from all endpoints
+-      for (const [endpoint, path] of Object.entries(endpoints)) {
+-        try {
+-          const response = await this.makeRequest<any>(path);
+-          (result as any)[endpoint] = response.data || response;
+-        } catch (error) {
+-          console.error(`Error fetching ${endpoint}:`, error);
+-          (result as any)[endpoint] = null;
+-        }
+-      }
+-
+-      // Handle next delivery slot endpoint (requires userId and addressId)
+-      if (this.userId && this.addressId) {
+-        try {
+-          const nextDeliveryPath = `/services/frontend-service/timeslots-api/0?userId=${this.userId}&addressId=${this.addressId}&reasonableDeliveryTime=true`;
+-          const response = await this.makeRequest<any>(nextDeliveryPath);
+-          result.next_delivery_slot = response.data || response;
+-        } catch (error) {
+-          console.error('Error fetching next_delivery_slot:', error);
+-          result.next_delivery_slot = null;
+-        }
+-      } else {
+-        result.next_delivery_slot = null;
++    // Fetch data from all endpoints
++    for (const [endpoint, path] of Object.entries(endpoints)) {
++      try {
++        const response = await this.makeRequest<any>(path);
++        (result as any)[endpoint] = response.data || response;
++      } catch (error) {
++        console.error(`Error fetching ${endpoint}:`, error);
++        (result as any)[endpoint] = null;
+       }
++    }
+ 
+-      // Get cart content (call internal method to avoid double login)
++    // Handle next delivery slot endpoint (requires userId and addressId)
++    if (this.userId && this.addressId) {
+       try {
+-        const response = await this.makeRequest<any>('/services/frontend-service/v2/cart');
+-        const data = response.data || {};
+-
+-        result.cart = {
+-          total_price: data.totalPrice || 0,
+-          total_items: Object.keys(data.items || {}).length,
+-          can_make_order: data.submitConditionPassed || false,
+-          products: Object.entries(data.items || {}).map(([productId, productData]: [string, any]) => ({
+-            id: productId,
+-            cart_item_id: productData.orderFieldId || '',
+-            name: productData.productName || '',
+-            quantity: productData.quantity || 0,
+-            price: productData.price || 0,
+-            category_name: productData.primaryCategoryName || '',
+-            brand: productData.brand || ''
+-          }))
+-        };
++        const nextDeliveryPath = `/services/frontend-service/timeslots-api/0?userId=${this.userId}&addressId=${this.addressId}&reasonableDeliveryTime=true`;
++        const response = await this.makeRequest<any>(nextDeliveryPath);
++        result.next_delivery_slot = response.data || response;
+       } catch (error) {
+-        console.error('Error fetching cart:', error);
+-        result.cart = undefined;
++        console.error('Error fetching next_delivery_slot:', error);
++        result.next_delivery_slot = null;
+       }
++    } else {
++      result.next_delivery_slot = null;
++    }
+ 
+-      return result;
+-    } finally {
+-      await this.logout();
++    // Get cart content (call internal method to avoid double login)
++    try {
++      const response = await this.makeRequest<any>('/services/frontend-service/v2/cart');
++      const data = response.data || {};
++
++      result.cart = {
++        total_price: data.totalPrice || 0,
++        total_items: Object.keys(data.items || {}).length,
++        can_make_order: data.submitConditionPassed || false,
++        products: Object.entries(data.items || {}).map(([productId, productData]: [string, any]) => ({
++          id: productId,
++          cart_item_id: productData.orderFieldId || '',
++          name: productData.productName || '',
++          quantity: productData.quantity || 0,
++          price: productData.price || 0,
++          category_name: productData.primaryCategoryName || '',
++          brand: productData.brand || ''
++        }))
++      };
++    } catch (error) {
++      console.error('Error fetching cart:', error);
++      result.cart = undefined;
+     }
++
++    return result;
+   }
+ 
+   async getOrderHistory(limit: number = 50): Promise<any> {
+     await this.login();
+-
+-    try {
+-      const response = await this.makeRequest<any>(`/api/v3/orders/delivered?offset=0&limit=${limit}`);
+-      return response.data || response;
+-    } finally {
+-      await this.logout();
+-    }
++    const response = await this.makeRequest<any>(`/api/v3/orders/delivered?offset=0&limit=${limit}`);
++    return response.data || response;
+   }
+ 
+   async getDeliveryInfo(): Promise<any> {
+     await this.login();
+-
+-    try {
+-      const response = await this.makeRequest<any>('/services/frontend-service/first-delivery?reasonableDeliveryTime=true');
+-      return response.data || response;
+-    } finally {
+-      await this.logout();
+-    }
++    const response = await this.makeRequest<any>('/services/frontend-service/first-delivery?reasonableDeliveryTime=true');
++    return response.data || response;
+   }
+ 
+   async getUpcomingOrders(): Promise<any> {
+     await this.login();
+-
+-    try {
+-      const response = await this.makeRequest<any>('/api/v3/orders/upcoming');
+-      return response.data || response;
+-    } finally {
+-      await this.logout();
+-    }
++    const response = await this.makeRequest<any>('/api/v3/orders/upcoming');
++    return response.data || response;
+   }
+ 
+   async getPremiumInfo(): Promise<any> {
+     await this.login();
+-
+-    try {
+-      const response = await this.makeRequest<any>('/services/frontend-service/premium/profile');
+-      return response.data || response;
+-    } finally {
+-      await this.logout();
+-    }
++    const response = await this.makeRequest<any>('/services/frontend-service/premium/profile');
++    return response.data || response;
+   }
+ 
+   async getDeliverySlots(): Promise<any> {
+     await this.login();
+-
+-    try {
+-      if (this.userId && this.addressId) {
+-        const response = await this.makeRequest<any>(`/services/frontend-service/timeslots-api/0?userId=${this.userId}&addressId=${this.addressId}&reasonableDeliveryTime=true`);
+-        return response.data || response;
+-      } else {
+-        throw new RohlikAPIError('User ID or Address ID not available');
+-      }
+-    } finally {
+-      await this.logout();
++    if (this.userId && this.addressId) {
++      const response = await this.makeRequest<any>(`/services/frontend-service/timeslots-api/0?userId=${this.userId}&addressId=${this.addressId}&reasonableDeliveryTime=true`);
++      return response.data || response;
++    } else {
++      throw new RohlikAPIError('User ID or Address ID not available');
+     }
+   }
+ 
+   async getAnnouncements(): Promise<any> {
+     await this.login();
+-
+-    try {
+-      const response = await this.makeRequest<any>('/services/frontend-service/announcements/top');
+-      return response.data || response;
+-    } finally {
+-      await this.logout();
+-    }
++    const response = await this.makeRequest<any>('/services/frontend-service/announcements/top');
++    return response.data || response;
+   }
+ 
+   async getReusableBagsInfo(): Promise<any> {
+     await this.login();
+-
+-    try {
+-      const response = await this.makeRequest<any>('/api/v1/reusable-bags/user-info');
+-      return response.data || response;
+-    } finally {
+-      await this.logout();
+-    }
++    const response = await this.makeRequest<any>('/api/v1/reusable-bags/user-info');
++    return response.data || response;
+   }
+ 
+   async getSalesCategories(): Promise<{ id: number; name: string; slug: string }[]> {
+     await this.login();
++    // Get subcategory IDs
++    const subResponse = await this.makeRequest<any>('/api/v1/categories/sales/subcategories');
++    const subData = subResponse as any;
++    const categoryIds: number[] = subData.categoryIds || [];
+ 
+-    try {
+-      // Get subcategory IDs
+-      const subResponse = await this.makeRequest<any>('/api/v1/categories/sales/subcategories');
+-      const subData = subResponse as any;
+-      const categoryIds: number[] = subData.categoryIds || [];
+-
+-      if (categoryIds.length === 0) {
+-        return [];
+-      }
++    if (categoryIds.length === 0) {
++      return [];
++    }
+ 
+-      // Get category names
+-      const params = new URLSearchParams();
+-      for (const id of categoryIds) {
+-        params.append('categories', String(id));
+-      }
+-      params.append('type', 'favorite-sales');
+-
+-      const catResponse = await this.makeRequest<any>(`/api/v1/categories?${params}`);
+-      const categories = Array.isArray(catResponse) ? catResponse : [];
+-
+-      return categories.map((c: any) => ({
+-        id: c.categoryId,
+-        name: c.name,
+-        slug: c.slug
+-      }));
+-    } finally {
+-      await this.logout();
++    // Get category names
++    const params = new URLSearchParams();
++    for (const id of categoryIds) {
++      params.append('categories', String(id));
+     }
++    params.append('type', 'favorite-sales');
++
++    const catResponse = await this.makeRequest<any>(`/api/v1/categories?${params}`);
++    const categories = Array.isArray(catResponse) ? catResponse : [];
++
++    return categories.map((c: any) => ({
++      id: c.categoryId,
++      name: c.name,
++      slug: c.slug
++    }));
+   }
+ 
+   async getDiscountedProducts(
+@@ -503,54 +475,44 @@ export class RohlikAPI {
+     sort: string = 'recommended'
+   ): Promise<any[]> {
+     await this.login();
++    // Step 1: Get product IDs for the sales category
++    const categoryPath = categoryId ? `/${categoryId}` : '';
++    const listParams = new URLSearchParams({
++      page: String(page),
++      size: String(size),
++      sort,
++      filter: '',
++      excludeProductIds: ''
++    });
+ 
+-    try {
+-      // Step 1: Get product IDs for the sales category
+-      const categoryPath = categoryId ? `/${categoryId}` : '';
+-      const listParams = new URLSearchParams({
+-        page: String(page),
+-        size: String(size),
+-        sort,
+-        filter: '',
+-        excludeProductIds: ''
+-      });
+-
+-      const listResponse = await this.makeRequest<any>(
+-        `/api/v1/categories/${saleType}${categoryPath}/products?${listParams}`
+-      );
++    const listResponse = await this.makeRequest<any>(
++      `/api/v1/categories/${saleType}${categoryPath}/products?${listParams}`
++    );
+ 
+-      const data = listResponse as any;
+-      const productIds: number[] = data.productIds || [];
++    const data = listResponse as any;
++    const productIds: number[] = data.productIds || [];
+ 
+-      if (productIds.length === 0) {
+-        return [];
+-      }
++    if (productIds.length === 0) {
++      return [];
++    }
+ 
+-      // Step 2: Get product card details
+-      const cardParams = new URLSearchParams();
+-      for (const id of productIds) {
+-        cardParams.append('products', String(id));
+-      }
+-      cardParams.append('categoryType', saleType);
++    // Step 2: Get product card details
++    const cardParams = new URLSearchParams();
++    for (const id of productIds) {
++      cardParams.append('products', String(id));
++    }
++    cardParams.append('categoryType', saleType);
+ 
+-      const cardResponse = await this.makeRequest<any>(
+-        `/api/v1/products/card?${cardParams}`
+-      );
++    const cardResponse = await this.makeRequest<any>(
++      `/api/v1/products/card?${cardParams}`
++    );
+ 
+-      return Array.isArray(cardResponse) ? cardResponse : [];
+-    } finally {
+-      await this.logout();
+-    }
++    return Array.isArray(cardResponse) ? cardResponse : [];
+   }
+ 
+   async getOrderDetail(orderId: string): Promise<any> {
+     await this.login();
+-
+-    try {
+-      const response = await this.makeRequest<any>(`/api/v3/orders/${orderId}`);
+-      return response.data || response;
+-    } finally {
+-      await this.logout();
+-    }
++    const response = await this.makeRequest<any>(`/api/v3/orders/${orderId}`);
++    return response.data || response;
+   }
+-}
+\ No newline at end of file
++}
