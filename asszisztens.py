@@ -19,6 +19,7 @@ import argparse
 import json
 import os
 import re
+import time
 import sys
 
 import adat
@@ -581,32 +582,84 @@ class Asszisztens:
         self.arak_szerint = {}        # kifli_id -> ar, a vegosszeghez
         self._akcio_gyorstar = None
         self.kep_tetelek = None        # a feltoltott keprol kiolvasva
+        # Amire mar kerestunk ebben a beszelgetesben - nem kerdezunk ujra
+        self._kereses_gyorstar = {}
+        self._kosar_gyorstar = None    # (idopont, nyers valasz)
         self.lezarva = False
 
     # ------------------------------------------------------------- eszkozok
 
-    def termek_keres(self, termek, mennyiseg_szoveg=""):
+    def termek_keres(self, termek, mennyiseg_szoveg="", frissen_keress=False):
+        """
+        Termekkereses a Kiflin.
+
+        A Kifli ratakorlatot szab, ezert KET helyen sporolunk kerest:
+        1. Amit mar megtanultunk, arra nem keresunk ujra - az ID megvan.
+        2. Amire mar kerestunk ebben a beszelgetesben, azt a
+           gyorstarbol adjuk vissza.
+        Egy 15 tételes listanal ez a keresesek ketharmadat megsporolja.
+        """
         termek = (termek or "").strip().lower()
         if not termek:
             return {"hiba": "Ures keresés."}
 
         ismert = self.tarolo.keres(termek)
 
-        try:
-            nyers = self.mcp.hiv("search_products",
-                                 {"product_name": termek, "limit": 25})
-        except MCPHiba as e:
-            return {"hiba": str(e)}
+        # 1. Tanult termek - nincs szukseg keresesre
+        if ismert and not frissen_keress:
+            talalat = {
+                "id": ismert["kifli_id"], "nev": ismert["kifli_nev"],
+                "ar": self.arak_szerint.get(ismert["kifli_id"]),
+                "mennyiseg": ismert["amount_value"],
+                "egyseg": ismert["amount_unit"],
+                "bulk": bool(ismert["bulk"]),
+            }
+            self._talalatokat_megjegyez([talalat])
+            print(f"\n{HA}  '{termek}' - ismert, nem kerestem ujra{ALAP}")
+            return {
+                "kereses": termek,
+                "mennyiseg_szoveg": mennyiseg_szoveg or None,
+                "talalatok": [{
+                    "id": talalat["id"], "nev": talalat["nev"],
+                    "ar": talalat["ar"],
+                    "kiszereles": (f"{talalat['mennyiseg']:g} "
+                                   f"{talalat['egyseg']}"
+                                   if talalat.get("mennyiseg") else None),
+                }],
+                "ismert_termek": True,
+                "hanyszor_vette": ismert["hit_count"],
+                "megjegyzes": (
+                    "Ezt a felhasznalo korabban mar valasztotta, ezert nem "
+                    "kerestem ujra - igy gyorsabb, es kevesebbet terheljuk "
+                    "a Kiflit. Tedd be kerdes nelkul. Ha a felhasznalo "
+                    "MASIKAT szeretne, hivd ujra ezt az eszkozt a "
+                    "frissen_keress=true kapcsoloval."),
+            }
 
-        talalatok = arak.rangsorol(p.termekek_ertelmez(nyers))
-        if not talalatok:
-            return {"talalatok": [], "uzenet": f"Nincs talalat erre: {termek}"}
+        # 2. Ebben a beszelgetesben mar kerestunk ra
+        if not frissen_keress and termek in self._kereses_gyorstar:
+            talalatok = self._kereses_gyorstar[termek]
+            print(f"\n{HA}  '{termek}' - mar kerestem, a korabbi "
+                  f"talalatok{ALAP}")
+        else:
+            try:
+                nyers = self.mcp.hiv("search_products",
+                                     {"product_name": termek, "limit": 25})
+            except MCPHiba as e:
+                return {"hiba": str(e)}
+
+            talalatok = arak.rangsorol(p.termekek_ertelmez(nyers))
+            if not talalatok:
+                return {"talalatok": [],
+                        "uzenet": f"Nincs talalat erre: {termek}",
+                        "megjegyzes": ("Mondd meg oszinten, hogy nincs "
+                                       "talalat. NE talalj ki terméket.")}
+            self._kereses_gyorstar[termek] = talalatok
+            self._talalatok_kiir(termek, talalatok)
 
         # A korabbi talalatok is elerhetok maradnak, hogy a felhasznalo
         # visszahivatkozhasson rajuk ("akkor megis az elso legyen")
         self._talalatokat_megjegyez(talalatok)
-
-        self._talalatok_kiir(termek, talalatok)
 
         eredmeny = {
             "kereses": termek,
@@ -628,6 +681,25 @@ class Asszisztens:
             }
         return eredmeny
 
+    # A kosar tartalma ennyi ideig ervenyes. Egymas utan betett
+    # tételeknel igy nem kerjuk le minden alkalommal - a Kifli
+    # ratakorlatja miatt ez sokat szamit.
+    KOSAR_ERVENYES = 4.0     # masodperc
+
+    def _kosar_nyers(self, frissen=False):
+        """A kosar nyers tartalma, rovid ideig gyorstarazva."""
+        most = time.monotonic()
+        if (not frissen and self._kosar_gyorstar
+                and most - self._kosar_gyorstar[0] < self.KOSAR_ERVENYES):
+            return self._kosar_gyorstar[1]
+        nyers = self.mcp.hiv("get_cart_content")
+        self._kosar_gyorstar = (most, nyers)
+        return nyers
+
+    def _kosar_ervenytelenit(self):
+        """A kosar valtozott - a kovetkezo lekeres legyen friss."""
+        self._kosar_gyorstar = None
+
     def _kosarban_van(self, kifli_id, nev):
         """
         Ellenorzi, hogy a termek tenyleg bekerult-e a kosarba.
@@ -637,7 +709,7 @@ class Asszisztens:
         nem a termek ID-jat.
         """
         try:
-            nyers = self.mcp.hiv("get_cart_content")
+            nyers = self._kosar_nyers(frissen=True)
         except MCPHiba:
             return True, None  # ha nem tudjuk ellenorizni, ne blokkoljunk
 
@@ -724,7 +796,9 @@ class Asszisztens:
         try:
             self.mcp.hiv("add_to_cart", {"products": [
                 {"product_id": kifli_id, "quantity": db}]})
+            self._kosar_ervenytelenit()
         except MCPHiba as e:
+            self._kosar_ervenytelenit()
             return {"hiba": f"Nem sikerult a kosarba tenni: {e}"}
 
         # Ellenorizzuk, hogy tenyleg bement. Az add_to_cart nem mindig
@@ -778,7 +852,7 @@ class Asszisztens:
             return {"hiba": f"A darabszam nem szam: {darab!r}"}
 
         try:
-            nyers = self.mcp.hiv("get_cart_content")
+            nyers = self._kosar_nyers()
         except MCPHiba as e:
             return {"hiba": str(e)}
 
@@ -819,7 +893,9 @@ class Asszisztens:
                          {"order_field_id": str(tetel["cart_item_id"])})
             self.mcp.hiv("add_to_cart", {"products": [
                 {"product_id": talalat["id"], "quantity": uj_darab}]})
+            self._kosar_ervenytelenit()
         except MCPHiba as e:
+            self._kosar_ervenytelenit()
             return {"hiba": f"Nem sikerult a modositas: {e}"}
 
         bent, kosar_ar = self._kosarban_van(talalat["id"], tetel["nev"])
@@ -897,7 +973,7 @@ class Asszisztens:
         felhasznalo korabban elutasitott, azt nem ajanljuk ujra.
         """
         try:
-            nyers = self.mcp.hiv("get_cart_content")
+            nyers = self._kosar_nyers()
         except MCPHiba as e:
             return {"hiba": str(e)}
 
@@ -1036,7 +1112,7 @@ class Asszisztens:
 
         # A regi darabszamot atvesszuk
         try:
-            nyers = self.mcp.hiv("get_cart_content")
+            nyers = self._kosar_nyers()
         except MCPHiba as e:
             return {"hiba": str(e)}
         kosarban = next(
@@ -1051,7 +1127,9 @@ class Asszisztens:
                          {"order_field_id": str(kosarban["cart_item_id"])})
             self.mcp.hiv("add_to_cart", {"products": [
                 {"product_id": alternativ_id, "quantity": darab}]})
+            self._kosar_ervenytelenit()
         except MCPHiba as e:
+            self._kosar_ervenytelenit()
             return {"hiba": f"A csere nem sikerult: {e}"}
 
         bent, kosar_ar = self._kosarban_van(alternativ_id, uj["nev"])
@@ -1069,7 +1147,7 @@ class Asszisztens:
     def kosar_megmutat(self):
         """A VALODI Kifli kosar tartalma, nem a memoria."""
         try:
-            nyers = self.mcp.hiv("get_cart_content")
+            nyers = self._kosar_nyers()
         except MCPHiba as e:
             return {"hiba": str(e)}
 
@@ -1099,7 +1177,7 @@ class Asszisztens:
     def kosarbol_kivesz(self, termek):
         """A VALODI Kifli kosarbol vesz le tetelt."""
         try:
-            nyers = self.mcp.hiv("get_cart_content")
+            nyers = self._kosar_nyers()
         except MCPHiba as e:
             return {"hiba": str(e)}
 
@@ -1127,7 +1205,9 @@ class Asszisztens:
         try:
             self.mcp.hiv("remove_from_cart",
                          {"order_field_id": str(tetel["cart_item_id"])})
+            self._kosar_ervenytelenit()
         except MCPHiba as e:
+            self._kosar_ervenytelenit()
             return {"hiba": f"Nem sikerult levenni: {e}"}
 
         print(f"  {PI}- {tetel['nev']}{ALAP}")

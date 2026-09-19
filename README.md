@@ -13,7 +13,7 @@ Magyarul, úgy ahogy tényleg beszélsz — „harminc deka trappistát”,
 ![Python](https://img.shields.io/badge/Python-3.9+-132B52?style=flat-square&labelColor=0F2342)
 ![OpenAI Realtime](https://img.shields.io/badge/OpenAI-Realtime-132B52?style=flat-square&labelColor=0F2342)
 ![Magyar](https://img.shields.io/badge/nyelv-magyar-C8322B?style=flat-square&labelColor=0F2342)
-![Tesztek](https://img.shields.io/badge/tesztek-72-7FB069?style=flat-square&labelColor=0F2342)
+![Tesztek](https://img.shields.io/badge/tesztek-77-7FB069?style=flat-square&labelColor=0F2342)
 ![Licenc](https://img.shields.io/badge/licenc-MIT-7FB069?style=flat-square&labelColor=0F2342)
 
 </div>
@@ -72,8 +72,9 @@ kamera, gépen a fogd-és-vidd vagy a `Cmd+V`.
 **Megtanulja a szokásaidat**
 
 Ha egyszer megmondtad, hogy a „tejföl” nálad a Magyar Tejföl 20%,
-onnantól kérdés nélkül azt teszi be. A rossz tanulás egy paranccsal
-törölhető.
+onnantól kérdés nélkül azt teszi be — **keresés nélkül**, mert az ID-t
+már ismeri. Egy 15 tételes listánál ez a keresések kétharmadát
+megspórolja.
 
 </td>
 <td valign="top">
@@ -308,7 +309,7 @@ Az API kulcs a Python oldalon marad, nem kerül ki a böngészőbe.
 | `llm.py` | a magyar szöveg normalizálása |
 | `szinkron.py` | listából kosár, beszélgetés nélkül |
 | `api.py` | telefonos gyorsfelvétel (Siri) |
-| `tesztek.py` | 72 funkcionális teszt, hálózat nélkül |
+| `tesztek.py` | 77 funkcionális teszt, hálózat nélkül |
 | `ellenorzes.py` | statikus ellenőrzés |
 | `Dockerfile` | szerveres futtatás (NAS, VPS) |
 
@@ -371,8 +372,10 @@ szinkronizálásnál történik, egyszer.
   (akciók, kimért áruk). Ilyenkor a kosár ára az igaz, és az asszisztens
   azt mondja.
 - **A Kifli rátakorlátot szab.** Sok termék egyszerre, vagy sűrű
-  használat után lassít. A program magától vár és újrapróbál, de ha
-  tartósan blokkol, pár percet kell várni.
+  használat után lassít. A program magától vár és újrapróbál, és a
+  tanult termékeknél nem is keres — de ha tartósan blokkol, pár percet
+  kell várni. A korlát megkerülése nem cél: az a Kifli szerverei elleni
+  szándékos terhelés lenne.
 - **A kézírás felismerése nem tökéletes.** Ezért minden bizonytalan
   tételre rákérdez, ahelyett hogy találgatna. Ha a kép széle levágja a
   sort, azt is jelzi — újrafotózás kell.
@@ -386,7 +389,7 @@ szinkronizálásnál történik, egyszer.
 ## Fejlesztés
 
 ```bash
-python3 tesztek.py       # 72 funkcionális teszt, hálózat nélkül
+python3 tesztek.py       # 77 funkcionális teszt, hálózat nélkül
 python3 ellenorzes.py    # statikus ellenőrzés
 ```
 
@@ -406,6 +409,7 @@ Amit külön ellenőriznek, mert ezekben **csendben lehet hibázni**:
 - üres találatnál nem talál ki terméket
 - egy várakozó hívás nem blokkolja a beszélgetést
 - a helyettesítés soha nem cserél magától, és az elutasítás végleges
+- tanult terméknél nem megy ki felesleges keresés
 
 ## Közreműködés
 

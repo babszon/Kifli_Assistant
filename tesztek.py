@@ -491,6 +491,113 @@ def _():
     assert "hiba" in r
 
 
+@teszt("tanult termeknel nem keres ujra")
+def _():
+    # A Kifli ratakorlatot szab; amit mar tudunk, arra felesleges
+    # kerest kuldeni.
+    mcp = HamisMCP()
+    a = uj_asszisztens(mcp)
+    a.tarolo.ment("tejföl", 28042, "Magyar Tejföl 20%", 330, "g")
+    mcp.naplo.clear()
+
+    r = a.termek_keres("tejföl")
+    assert not any(h[0] == "search_products" for h in mcp.naplo), \
+        "keresett, pedig ismerte"
+    assert r["ismert_termek"] is True
+    assert r["talalatok"][0]["id"] == 28042
+    # a talalat elerheto a kosarba_tesz szamara
+    assert any(t["id"] == 28042 for t in a.utolso_talalatok)
+
+
+@teszt("frissen_keress kapcsoloval megis keres")
+def _():
+    mcp = HamisMCP()
+    a = uj_asszisztens(mcp)
+    a.tarolo.ment("tejföl", 28042, "Magyar Tejföl 20%", 330, "g")
+    mcp.naplo.clear()
+
+    a.termek_keres("tejföl", frissen_keress=True)
+    assert any(h[0] == "search_products" for h in mcp.naplo), \
+        "nem keresett, pedig kertuk"
+
+
+@teszt("ugyanarra ketszer nem keres ujra (gyorstar)")
+def _():
+    mcp = HamisMCP()
+    a = uj_asszisztens(mcp)
+    a.termek_keres("tej")
+    mcp.naplo.clear()
+
+    r = a.termek_keres("tej")
+    assert not any(h[0] == "search_products" for h in mcp.naplo), \
+        "masodszor is keresett"
+    assert r["talalatok"], "a gyorstarbol ures lett"
+
+
+@teszt("a kosar lekerese rovid ideig gyorstarazva")
+def _():
+    mcp = HamisMCP()
+    a = uj_asszisztens(mcp)
+    a.kosar_megmutat()
+    mcp.naplo.clear()
+
+    a.kosar_megmutat()          # azonnal utana
+    assert not any(h[0] == "get_cart_content" for h in mcp.naplo), \
+        "ujra lekerte a kosarat"
+
+    # A betetel-ellenorzes maga frissiti a gyorstarat, ezert utana a
+    # kosar_megmutat mar nem ker le ujra - ez nyereseg, nem hiba.
+    kosar = KOSAR.replace("• Házi vekni (Rádi)",
+                          "• Magyar Tej ESL Tej 2,8% (Magyar)")
+    mcp2 = HamisMCP(kosar=kosar)
+    b = uj_asszisztens(mcp2)
+    b.termek_keres("tej")
+    b.kosarba_tesz(16321, "tej", darab=1)
+    ellenorzesek = sum(1 for h in mcp2.naplo if h[0] == "get_cart_content")
+    mcp2.naplo.clear()
+    b.kosar_megmutat()
+    assert not any(h[0] == "get_cart_content" for h in mcp2.naplo), \
+        "feleslegesen kerte le ujra a kosarat"
+    assert ellenorzesek == 1, (
+        f"{ellenorzesek} kosar-lekeres egy betetelnel, 1 kellene")
+
+    # Ha viszont eltelik a gyorstar ervenyessege, ujra lekeri
+    b._kosar_gyorstar = (b._kosar_gyorstar[0] - b.KOSAR_ERVENYES - 1,
+                         b._kosar_gyorstar[1])
+    mcp2.naplo.clear()
+    b.kosar_megmutat()
+    assert any(h[0] == "get_cart_content" for h in mcp2.naplo), \
+        "lejart gyorstarral sem frissitett"
+
+
+@teszt("15 tételes listanal a keresesek ketharmada megsporolhato")
+def _():
+    import contextlib
+    import io
+
+    LISTA = ["tej", "kenyér", "tojás", "sajt", "vaj", "joghurt", "kefir",
+             "kóla", "paprika", "paradicsom", "krumpli", "hagyma",
+             "cukor", "wc papír", "mosópor"]
+    kosar = KOSAR.replace("• Házi vekni (Rádi)",
+                          "• Magyar Tej ESL Tej 2,8% (Magyar)")
+
+    def keresesek_szama(tanult):
+        mcp = HamisMCP(kosar=kosar)
+        a = uj_asszisztens(mcp)
+        for nev in LISTA[:tanult]:
+            a.tarolo.ment(nev, 16321, "Magyar Tej ESL Tej 2,8%", 1, "l")
+        with contextlib.redirect_stdout(io.StringIO()):
+            for nev in LISTA:
+                a.termek_keres(nev)
+                a.kosarba_tesz(16321, nev, darab=1)
+        return sum(1 for h in mcp.naplo if h[0] == "search_products")
+
+    nulla = keresesek_szama(0)
+    tizzel = keresesek_szama(10)
+    assert nulla == 15, nulla
+    assert tizzel == 5, f"{tizzel} kereses, 5 kellene"
+
+
 @teszt("kosarba_tesz ismeretlen ID-t visszautasit")
 def _():
     a = uj_asszisztens()
