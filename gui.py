@@ -34,6 +34,9 @@ Z, PI, S, SZ, HA, F, ALAP = ("\033[92m", "\033[91m", "\033[93m", "\033[96m",
 
 MINTA_HZ = 24000
 
+# Egy eszkozhivas soha nem foghatja meg a beszelgetest
+ESZKOZ_IDOKORLAT = 100.0   # masodperc
+
 
 def szabad_port(kezdet=8420):
     for port in range(kezdet, kezdet + 50):
@@ -81,8 +84,16 @@ class Hid:
         try:
             # A hivas() sosem dob kivetelt, de a szal maga elszallhat
             try:
-                eredmeny = await asyncio.to_thread(
-                    self.asszisztens.hivas, nev, argumentumok)
+                # Idokorlat: egy eszkoz sosem foghatja meg a beszelgetest.
+                # Ha tullepi, a modell hibat kap, es tud mit mondani.
+                eredmeny = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        self.asszisztens.hivas, nev, argumentumok),
+                    timeout=ESZKOZ_IDOKORLAT)
+            except asyncio.TimeoutError:
+                eredmeny = {"hiba": (f"A(z) {nev} tul sokaig tartott "
+                                     f"({ESZKOZ_IDOKORLAT:.0f} mp). "
+                                     f"A Kifli valoszinuleg lassit.")}
             except Exception as e:
                 eredmeny = {"hiba": f"Nem sikerult: {e}"}
 
@@ -262,20 +273,24 @@ class Hid:
                                hang=self.beallitasok.get("hang", "marin"),
                                proba=self.beallitasok.get("proba", False))
 
-            # Indulaskor megmutatjuk, mi van mar a kosarban. Ha a Kifli
-            # epp lassit, ezt CSENDBEN kihagyjuk - a kosar ugyis frissul,
-            # amint bekerul valami. Az indulast nem akaszthatja meg.
-            try:
-                eredmeny = await asyncio.to_thread(
-                    self.asszisztens.hivas, "kosar_megmutat", {})
-                if "hiba" not in eredmeny:
-                    await self.kuld_ui("tool_done", name="kosar_megmutat",
-                                       result=eredmeny)
-            except Exception:
-                pass
+            # Indulaskor megmutatjuk, mi van mar a kosarban - de HATTERBEN.
+            # Ha a Kifli epp lassit, ez percekig is tarthat; nem varakoztathatja
+            # meg a beszelgetest. A kosar ugyis frissul, amint bekerul valami.
+            asyncio.create_task(self._indulo_kosar())
 
             await asyncio.gather(self.openai_esemenyek(),
                                  self.bongeszo_esemenyek())
+
+    async def _indulo_kosar(self):
+        """A kosar tartalma indulaskor, csendben, hattérben."""
+        try:
+            eredmeny = await asyncio.to_thread(
+                self.asszisztens.hivas, "kosar_megmutat", {})
+            if "hiba" not in eredmeny:
+                await self.kuld_ui("tool_done", name="kosar_megmutat",
+                                   result=eredmeny)
+        except Exception:
+            pass
 
 
 TIPUSOK = {".html": "text/html; charset=utf-8",

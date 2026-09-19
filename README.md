@@ -13,7 +13,7 @@ Magyarul, úgy ahogy tényleg beszélsz — „harminc deka trappistát”,
 ![Python](https://img.shields.io/badge/Python-3.9+-132B52?style=flat-square&labelColor=0F2342)
 ![OpenAI Realtime](https://img.shields.io/badge/OpenAI-Realtime-132B52?style=flat-square&labelColor=0F2342)
 ![Magyar](https://img.shields.io/badge/nyelv-magyar-C8322B?style=flat-square&labelColor=0F2342)
-![Tesztek](https://img.shields.io/badge/tesztek-61-7FB069?style=flat-square&labelColor=0F2342)
+![Tesztek](https://img.shields.io/badge/tesztek-64-7FB069?style=flat-square&labelColor=0F2342)
 ![Licenc](https://img.shields.io/badge/licenc-MIT-7FB069?style=flat-square&labelColor=0F2342)
 
 </div>
@@ -298,7 +298,7 @@ Az API kulcs a Python oldalon marad, nem kerül ki a böngészőbe.
 | `llm.py` | a magyar szöveg normalizálása |
 | `szinkron.py` | listából kosár, beszélgetés nélkül |
 | `api.py` | telefonos gyorsfelvétel (Siri) |
-| `tesztek.py` | 61 funkcionális teszt, hálózat nélkül |
+| `tesztek.py` | 64 funkcionális teszt, hálózat nélkül |
 | `ellenorzes.py` | statikus ellenőrzés |
 | `Dockerfile` | szerveres futtatás (NAS, VPS) |
 
@@ -375,7 +375,7 @@ szinkronizálásnál történik, egyszer.
 ## Fejlesztés
 
 ```bash
-python3 tesztek.py       # 61 funkcionális teszt, hálózat nélkül
+python3 tesztek.py       # 64 funkcionális teszt, hálózat nélkül
 python3 ellenorzes.py    # statikus ellenőrzés
 ```
 
@@ -393,6 +393,7 @@ Amit külön ellenőriznek, mert ezekben **csendben lehet hibázni**:
 - a kilogramm és a liter nem keveredik az egységár-összehasonlításban
 - nem állítja, hogy lefoglalt egy idősávot, amit nem tud lefoglalni
 - üres találatnál nem talál ki terméket
+- egy várakozó hívás nem blokkolja a beszélgetést
 
 ## Közreműködés
 

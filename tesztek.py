@@ -894,6 +894,73 @@ def _():
 fejezet("Ratakorlat")
 
 
+@teszt("a varakozo hivas NEM blokkolja a tobbit")
+def _():
+    # Ez volt a valodi hiba: a zar a teljes varakozas alatt fogva volt,
+    # igy az indulo kosarlekeres percekre megbenitotta a beszelgetest.
+    import threading
+    import time
+    import mcp_kliens as mk
+
+    HAMIS = """
+import json, sys
+for sor in sys.stdin:
+    sor = sor.strip()
+    if not sor: continue
+    u = json.loads(sor)
+    if u.get("method") == "initialize":
+        ki = {"jsonrpc":"2.0","id":u["id"],"result":{
+              "protocolVersion":"2024-11-05","capabilities":{},
+              "serverInfo":{"name":"f","version":"0"}}}
+    elif u.get("method") == "tools/call":
+        if u["params"]["name"] == "lassu":
+            ki = {"jsonrpc":"2.0","id":u["id"],"result":{"content":[
+                  {"type":"text","text":"HTTP 429: Too Many Requests"}],
+                  "isError":True}}
+        else:
+            ki = {"jsonrpc":"2.0","id":u["id"],"result":{"content":[
+                  {"type":"text","text":"ok"}]}}
+    else:
+        continue
+    sys.stdout.write(json.dumps(ki) + chr(10)); sys.stdout.flush()
+"""
+    p = Path(tempfile.gettempdir()) / "h_zarteszt.py"
+    p.write_text(HAMIS)
+    regi = (mk.MIN_SZUNET, mk.BUNTETO_SZUNET, mk.UJRA_VARAKOZAS,
+            mk.BUNTETES_HOSSZA, mk.ZARLAT_HOSSZA)
+    mk.MIN_SZUNET = mk.BUNTETO_SZUNET = 0.05
+    mk.UJRA_VARAKOZAS = (0.4, 0.4)
+    mk.BUNTETES_HOSSZA = mk.ZARLAT_HOSSZA = 0.05
+    try:
+        with mk.MCPKliens(parancs=["python3", str(p)]) as m:
+            ido = {}
+
+            def lassu():
+                try:
+                    m.hiv("lassu")
+                except mk.MCPHiba:
+                    pass
+
+            def gyors():
+                time.sleep(0.15)     # a lassu mar varakozik
+                t0 = time.monotonic()
+                m.hiv("gyors")
+                ido["gyors"] = time.monotonic() - t0
+
+            szalak = [threading.Thread(target=f) for f in (lassu, gyors)]
+            for s in szalak:
+                s.start()
+            for s in szalak:
+                s.join()
+
+            assert ido.get("gyors", 99) < 0.4, (
+                f"a masik hivas blokkolt ({ido.get('gyors'):.2f} mp)")
+    finally:
+        (mk.MIN_SZUNET, mk.BUNTETO_SZUNET, mk.UJRA_VARAKOZAS,
+         mk.BUNTETES_HOSSZA, mk.ZARLAT_HOSSZA) = regi
+        p.unlink(missing_ok=True)
+
+
 @teszt("ratakorlat utan lassabban kuld (bunteto szunet)")
 def _():
     import time
@@ -981,6 +1048,63 @@ for sor in sys.stdin:
     finally:
         (mk.UJRA_VARAKOZAS, mk.MIN_SZUNET, mk.BUNTETO_SZUNET) = regi
         p.unlink(missing_ok=True)
+
+
+@teszt("tartos korlatnal a tobbi hivas AZONNAL bukik (nem fagy be)")
+def _():
+    import time
+    import mcp_kliens as mk
+    HAMIS = """
+import json, sys
+for sor in sys.stdin:
+    sor = sor.strip()
+    if not sor: continue
+    u = json.loads(sor)
+    if u.get("method") == "initialize":
+        ki = {"jsonrpc":"2.0","id":u["id"],"result":{
+              "protocolVersion":"2024-11-05","capabilities":{},
+              "serverInfo":{"name":"f","version":"0"}}}
+    elif u.get("method") == "tools/call":
+        ki = {"jsonrpc":"2.0","id":u["id"],"result":{"content":[
+              {"type":"text","text":"HTTP 429: Too Many Requests"}],
+              "isError":True}}
+    else:
+        continue
+    sys.stdout.write(json.dumps(ki) + chr(10)); sys.stdout.flush()
+"""
+    p = Path(tempfile.gettempdir()) / "h_zarlat_t.py"
+    p.write_text(HAMIS)
+    regi = (mk.UJRA_VARAKOZAS, mk.MIN_SZUNET, mk.ZARLAT_HOSSZA)
+    mk.UJRA_VARAKOZAS, mk.MIN_SZUNET, mk.ZARLAT_HOSSZA = (0.02,), 0.01, 30
+    try:
+        with mk.MCPKliens(parancs=["python3", str(p)]) as m:
+            try:
+                m.hiv("elso")
+            except mk.MCPHiba:
+                pass
+            # Tiz tovabbi hivas ne varjon semmit
+            t0 = time.monotonic()
+            for i in range(10):
+                try:
+                    m.hiv(f"t{i}")
+                except mk.MCPHiba as e:
+                    assert "masodpercig nem probalkozom" in str(e), str(e)
+            eltelt = time.monotonic() - t0
+            assert eltelt < 0.5, (
+                f"10 hivas {eltelt:.2f} mp - befagyna a beszelgetes")
+    finally:
+        (mk.UJRA_VARAKOZAS, mk.MIN_SZUNET, mk.ZARLAT_HOSSZA) = regi
+        p.unlink(missing_ok=True)
+
+
+@teszt("az indulo kosarlekeres hatterben fut")
+def _():
+    # A gui.py nem varhatja meg a kosarat indulaskor: ha a Kifli lassit,
+    # a beszelgetes befagyna
+    sz = Path("gui.py").read_text(encoding="utf-8")
+    assert "_indulo_kosar" in sz
+    assert "asyncio.create_task(self._indulo_kosar())" in sz, \
+        "az indulo kosarlekeres blokkol"
 
 
 @teszt("a felulet jelzi a ratakorlatot")

@@ -37,6 +37,9 @@ Z, PI, S, SZ, HA, ALAP = ("\033[92m", "\033[91m", "\033[93m",
 MODELL = os.environ.get("OPENAI_REALTIME_MODEL", "gpt-realtime")
 HANG = os.environ.get("OPENAI_REALTIME_VOICE", "marin")
 MINTA_HZ = 24000
+
+# Egy eszkozhivas soha nem foghatja meg a beszelgetest
+ESZKOZ_IDOKORLAT = 100.0   # masodperc
 KERET = 480  # 20 ms
 
 HANG_KIEGESZITES = """
@@ -300,8 +303,13 @@ async def fut(asszisztens, szaraz, nem_szakit, erzekenyseg, csend_ms):
                 # Az eszkozok halozatot hivnak, ezert kulon szalon futnak,
                 # hogy ne blokkoljak a hangfolyamot
                 try:
-                    eredmeny = await asyncio.to_thread(
-                        asszisztens.hivas, nev, argumentumok)
+                    eredmeny = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            asszisztens.hivas, nev, argumentumok),
+                        timeout=ESZKOZ_IDOKORLAT)
+                except asyncio.TimeoutError:
+                    eredmeny = {"hiba": (f"A(z) {nev} tul sokaig tartott. "
+                                         f"A Kifli valoszinuleg lassit.")}
                 except Exception as e:
                     eredmeny = {"hiba": f"Nem sikerult: {e}"}
 

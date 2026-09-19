@@ -24,14 +24,17 @@ import queue
 # ki, es 429-et kapnank. Ezert hivasok kozott minimalis szunetet tartunk,
 # es 429 utan varunk, majd ujraprobalunk.
 MIN_SZUNET = 0.7          # masodperc ket hivas kozott
-# A ratakorlatok percben mernek, nem masodpercben. A korabbi 2-5-11
-# tul rovid volt: ha a Kifli tartosan lassit, tobbet kell varni.
-UJRA_VARAKOZAS = (2, 6, 15, 40)
+UJRA_VARAKOZAS = (2, 6, 15)   # 429 utan ennyit varunk, sorban
 
 # Ha egyszer 429-et kaptunk, egy ideig lassabban kuldunk - igy nem
-# esunk ujra bele rogton. A szunet fokozatosan all vissza.
+# esunk ujra bele rogton.
 BUNTETO_SZUNET = 3.0
 BUNTETES_HOSSZA = 90.0    # masodperc
+
+# Ha a varakozasok utan is 429 jon, a Kifli tartosan korlatoz. Ilyenkor
+# a KOVETKEZO hivasok AZONNAL hibat adnak, nem varnak ujra - kulonben
+# minden egyes tétel ujabb fel percet allna, es a beszelgetes befagyna.
+ZARLAT_HOSSZA = 60.0      # masodperc
 
 
 class MCPHiba(Exception):
@@ -56,6 +59,7 @@ class MCPKliens:
         self._utemezo = threading.Lock()
         self._utolso_hivas = 0.0
         self._buntetes_vege = 0.0
+        self._zarlat_vege = 0.0
 
     # ------------------------------------------------------------ eletciklus
 
@@ -167,48 +171,64 @@ class MCPKliens:
             raise MCPHiba(f"{nev}: {szoveg}")
         return szoveg
 
+    def _utemez(self):
+        """
+        Megvarja a sorat.
+
+        A zarat CSAK a szamolas idejere fogja, az alvast mar nelkule
+        vegzi. Ez fontos: korabban a zar a teljes varakozas alatt fogva
+        volt, igy egy percig varakozo hivas minden mast is blokkolt - az
+        asszisztens emiatt tunt nemanak.
+        """
+        with self._utemezo:
+            most = time.monotonic()
+            szunet = (BUNTETO_SZUNET if most < self._buntetes_vege
+                      else MIN_SZUNET)
+            indulhat = max(self._utolso_hivas + szunet, most)
+            self._utolso_hivas = indulhat     # a kovetkezo ehhez igazodik
+        varakozas = indulhat - time.monotonic()
+        if varakozas > 0:
+            time.sleep(varakozas)
+
     def hiv(self, nev, argumentumok=None):
         """
         Meghiv egy MCP toolt, es a szoveges valaszt adja vissza.
 
         Ket hivas kozott minimalis szunetet tart, es ratakorlat (429)
-        eseten var, majd ujraprobal. Igy egy tobb terméket tartalmazo
-        mondat sem futtatja ki a Kifli korlatjat.
+        eseten var, majd ujraprobal - de a varakozas alatt NEM fogja a
+        zarat, tehat mas hivasok kozben is mehetnek.
         """
-        with self._utemezo:
-            most = time.monotonic()
-            # Buntetesi idoszakban lassabban kuldunk
-            szunet = (BUNTETO_SZUNET if most < self._buntetes_vege
-                      else MIN_SZUNET)
-            eltelt = most - self._utolso_hivas
-            if eltelt < szunet:
-                time.sleep(szunet - eltelt)
-
-            utolso = None
-            for probalkozas in range(len(UJRA_VARAKOZAS) + 1):
-                try:
-                    eredmeny = self._hiv_egyszer(nev, argumentumok)
-                    self._utolso_hivas = time.monotonic()
-                    return eredmeny
-                except MCPRataHiba as e:
-                    utolso = e
-                    # Innentol lassabban kuldunk, hogy ne essunk ujra bele
-                    self._buntetes_vege = time.monotonic() + BUNTETES_HOSSZA
-                    if probalkozas >= len(UJRA_VARAKOZAS):
-                        break
-                    var = UJRA_VARAKOZAS[probalkozas]
-                    print(f"\033[90m  (a Kifli lassit, {var} mp varakozas"
-                          f"...)\033[0m", flush=True)
-                    time.sleep(var)
-                except MCPHiba:
-                    self._utolso_hivas = time.monotonic()
-                    raise
-
-            self._utolso_hivas = time.monotonic()
+        # Zarlat alatt azonnal visszaszolunk: ha egyszer mar vegigvartuk
+        # a teljes sorozatot, nincs ertelme minden tételnel ujra.
+        hatra = self._zarlat_vege - time.monotonic()
+        if hatra > 0:
             raise MCPRataHiba(
-                f"A Kifli most tul sok kerest kap, es {sum(UJRA_VARAKOZAS)} "
-                f"masodperc varakozas utan sem valaszolt. Par perc mulva "
-                f"ujra lehet probalni.")
+                f"A Kifli most tul sok kerest kap. Meg korulbelul "
+                f"{int(hatra)} masodpercig nem probalkozom ujra.")
+
+        for probalkozas in range(len(UJRA_VARAKOZAS) + 1):
+            self._utemez()
+            try:
+                return self._hiv_egyszer(nev, argumentumok)
+            except MCPRataHiba:
+                # Innentol lassabban kuldunk, hogy ne essunk ujra bele
+                self._buntetes_vege = time.monotonic() + BUNTETES_HOSSZA
+                if probalkozas >= len(UJRA_VARAKOZAS):
+                    break
+                var = UJRA_VARAKOZAS[probalkozas]
+                print(f"\033[90m  (a Kifli lassit, {var} mp varakozas"
+                      f"...)\033[0m", flush=True)
+                time.sleep(var)
+            except MCPHiba:
+                raise
+
+        # Vegleges kudarc: zarlatot hirdetunk, hogy a tobbi tétel ne
+        # fusson vegig ugyanezen a sorozaton
+        self._zarlat_vege = time.monotonic() + ZARLAT_HOSSZA
+        raise MCPRataHiba(
+            f"A Kifli most tul sok kerest kap, es {sum(UJRA_VARAKOZAS)} "
+            f"masodperc varakozas utan sem valaszolt. Par perc mulva "
+            f"ujra lehet probalni.")
 
 
 if __name__ == "__main__":

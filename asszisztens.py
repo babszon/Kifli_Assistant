@@ -135,10 +135,12 @@ kosarba. Ilyenkor:
   vegleges allapot.
 - Ha a hiba azt mondja, hogy a Kifli "tul sok kerest kap", akkor a
   webshop lassit, nem a te hibad es nem is a felhasznaloe. Ilyenkor:
-  ALLJ MEG, ne probald vegigfuttatni a tobbi tételt sem. Mondd meg
-  roviden, hogy a Kifli most terhelt, es kerdezd meg, varjatok-e par
-  percet, vagy inkabb kesobb folytassatok. Sorold fel, mi maradt ki -
-  hogy kesobb ne kelljen ujra elmondania.
+  ALLJ MEG AZONNAL. Ne probald vegigfuttatni a tobbi tételt, mert
+  mindegyik ugyanugy elbukna. Mondd meg roviden, hogy a Kifli most
+  terhelt, es sorold fel, mi maradt ki - hogy kesobb ne kelljen ujra
+  elmondania. Kerdezd meg, varjatok-e par percet.
+- Ha a hiba megmondja, hany masodpercig nem probalkozol ujra, azt
+  mondd el a felhasznalonak, hogy tudja, mennyit kell varnia.
 - A vegen foglald ossze, mi maradt ki. Peldaul: "A tej, a kenyer es a
   tojas bement. A mosoport most nem talalta a rendszer, azt majd
   probaljuk ujra."
