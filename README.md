@@ -13,6 +13,7 @@ Magyarul, úgy ahogy tényleg beszélsz — „harminc deka trappistát”,
 ![Python](https://img.shields.io/badge/Python-3.9+-132B52?style=flat-square&labelColor=0F2342)
 ![OpenAI Realtime](https://img.shields.io/badge/OpenAI-Realtime-132B52?style=flat-square&labelColor=0F2342)
 ![Magyar](https://img.shields.io/badge/nyelv-magyar-C8322B?style=flat-square&labelColor=0F2342)
+![Tesztek](https://img.shields.io/badge/tesztek-56-7FB069?style=flat-square&labelColor=0F2342)
 ![Licenc](https://img.shields.io/badge/licenc-MIT-7FB069?style=flat-square&labelColor=0F2342)
 
 </div>
@@ -22,8 +23,6 @@ Magyarul, úgy ahogy tényleg beszélsz — „harminc deka trappistát”,
 > **Te:** Elfogyott itthon a ketchup, kellene 20 tojás meg 4 liter kóla.
 > Mosogatógép tabletta is kell, márkás legyen.
 >
-> *(vagy egyszerűen lefotózod a cetlit)*
->
 > **AI:** Bement a Heinz ketchup, 570 gramm, 2249 forintért. A tojásból
 > két doboz Farm Prémium, összesen 1678 forint. A kóla most akciós, a
 > három és feles multipack 999 forint. A tablettából a Finish Power
@@ -31,6 +30,8 @@ Magyarul, úgy ahogy tényleg beszélsz — „harminc deka trappistát”,
 
 Nem kell gombot nyomni, és nem kell biztatni, hogy menjen tovább.
 Elmondod, mire van szükséged, ő végigmegy rajta.
+
+Vagy egyszerűen **lefotózod a cetlit**.
 
 <br>
 
@@ -57,6 +58,17 @@ tesztmondatból 41-et old meg helyesen.
 </td>
 <td width="50%" valign="top">
 
+**Lefotózod a cetlit**
+
+Kézzel írt lista vagy képernyőkép. Amit nem tud biztosan elolvasni, azt
+felolvassa és rákérdez — nem teszi be csendben. Telefonon a kamera, gépen
+a fogd-és-vidd vagy a `Cmd+V`.
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
 **Megtanulja a szokásaidat**
 
 Ha egyszer megmondtad, hogy a „tejföl” nálad a Magyar Tejföl 20%,
@@ -64,17 +76,17 @@ onnantól kérdés nélkül azt teszi be. A rossz tanulás egy paranccsal
 törölhető.
 
 </td>
-</tr>
-<tr>
 <td valign="top">
 
 **Kiszámolja a mennyiséget**
 
-20 tojás → 2 doboz, mert tízesével árulják. Fél kiló darált hús →
-kimért áru, jelzi, hogy a végösszeg eltérhet. Ezt a program számolja,
-nem a nyelvi modell — abban hibázna.
+20 tojás → 2 doboz, mert tízesével árulják. Egy 16 tekercses csomag
+vécépapír → 1 csomag, nem 16. Ezt a program számolja, nem a nyelvi
+modell — abban hibázna.
 
 </td>
+</tr>
+<tr>
 <td valign="top">
 
 **Ár-érték arányt elemez**
@@ -84,15 +96,23 @@ szűz. A hústartalom, a szabadtartás és a teljes kiőrlés mind számít
 neki.
 
 </td>
+<td valign="top">
+
+**Ismeri az akciós szekciókat**
+
+A hét akciói, többet olcsóbban, termékcsomagok, és az Xtra
+előfizetőknek szóló külön kedvezmények. Szól, ha a szokásos terméked
+épp akciós.
+
+</td>
 </tr>
 <tr>
 <td valign="top">
 
-**Lefotózod a cetlit**
+**Tudja, mikor és hova szállítanak**
 
-Kézzel írt lista vagy képernyőkép — kiolvassa, és összerakja belőle a
-kosarat. Amit nem tud biztosan elolvasni, azt felolvassa és rákérdez,
-nem teszi be csendben.
+Felolvassa a legkorábbi szabad idősávot az árával, jelöli a prémium és
+öko sávokat, és ismeri az előfizetésedet.
 
 </td>
 <td valign="top">
@@ -214,20 +234,20 @@ hangkártya. Csak a logika fut ott, mindig.
 
 **[Lépésről lépésre: NAS beállítása →](docs/nas.md)**
 
-### Két változat, egy kódbázis
+### Három változat, egy kódbázis
 
-|  | Grafikus | Terminálos | Telefonos |
+|  | Grafikus | Terminálos | Telefonos API |
 |:--|:--|:--|:--|
 | Indítás | `kifli.py` | `kifli.py --terminal` | `api.py` |
 | Beszélgetés | igen | igen | egy kör |
+| Képfeltöltés | igen | nem | nem |
 | Telefonról | igen, HTTPS-sel | nem | igen |
 | Visszhangtörlés | **hardveres** | szoftveres | — |
 | Függőség | `websockets` | + `sounddevice` | nincs |
 | Mire jó | mindennapi használat | szerver, Home Assistant | eszembe jutott |
 
 A böngésző ugyanazt a visszhangtörlést kapja az operációs rendszertől,
-amit a Zoom és a Meet használ. Emiatt a grafikus változatban közbe is
-lehet vágni anélkül, hogy az asszisztens visszahallaná magát.
+amit a Zoom és a Meet használ.
 
 ---
 
@@ -237,16 +257,16 @@ lehet vágni anélkül, hogy az asszisztens visszahallaná magát.
   böngésző                 Python                  OpenAI
   ────────                 ──────                  ──────
   mikrofon  ──── hang ───►  híd  ──── hang ────►  realtime
-  (visszhang-               │                        │
-   törléssel)               │      ◄── eszköz ───────┘
-                            ▼        hívások
+  kamera    ──── kép ────►   │                        │
+  (visszhang-                │      ◄── eszköz ───────┘
+   törléssel)                ▼        hívások
   felület   ◄── esemény ── Kifli.hu · tanulás · egységár
 ```
 
 Az asszisztens **tizennyolc eszközt** kap: keresés, kosárkezelés,
-mennyiség-módosítás, akciók, korábbi rendelések, szállítási idősávok,
-előfizetés és szállítási cím. A nyelvi modell dönti
-el, mit mikor hív.
+mennyiség-módosítás, feltöltött lista, akciók és akciós szekciók,
+korábbi rendelések, étkezés-javaslatok, szállítási idősávok, előfizetés
+és cím.
 
 De a **mennyiségszámítás, az egységár és a visszaigazoló mondatok a
 programban készülnek**, nem a modellben. Ez a projekt legfontosabb
@@ -264,22 +284,23 @@ Az API kulcs a Python oldalon marad, nem kerül ki a böngészőbe.
 | `kifli.py` | indító |
 | `telepites.py` | telepítő varázsló |
 | `gui.py` | a grafikus felület szervere |
-| `api.py` | telefonos gyorsfelvétel (Siri) |
 | `webui/index.html` | az asztali felület |
 | `webui/mobil.html` | a telefonos felület |
-| `realtime.py` | hangvezérelt beszélgetés terminálban |
 | `asszisztens.py` | az eszközök és a rendszerprompt |
+| `kep.py` | bevásárlólista kiolvasása fotóról |
+| `realtime.py` | hangvezérelt beszélgetés terminálban |
+| `hang.py` | mikrofon, felismerés, felolvasás |
 | `motor.py` | OpenAI / Gemini szöveges tool calling |
-| `mcp_kliens.py` | kapcsolat a Kifli szerverhez |
+| `mcp_kliens.py` | kapcsolat a Kifli szerverhez, rátakorláttal |
 | `parser.py` | a Kifli válaszainak feldolgozása |
 | `arak.py` | egységár-számítás |
 | `adat.py` | tanulás (SQLite) és Home Assistant |
 | `llm.py` | a magyar szöveg normalizálása |
-| `kep.py` | bevásárlólista kiolvasása fotóról |
 | `szinkron.py` | listából kosár, beszélgetés nélkül |
-| `Dockerfile` | szerveres futtatás (NAS, VPS) |
-| `tesztek.py` | funkcionális tesztek, hálózat nélkül |
+| `api.py` | telefonos gyorsfelvétel (Siri) |
+| `tesztek.py` | 56 funkcionális teszt, hálózat nélkül |
 | `ellenorzes.py` | statikus ellenőrzés |
+| `Dockerfile` | szerveres futtatás (NAS, VPS) |
 
 </details>
 
@@ -317,7 +338,8 @@ szinkronizálásnál történik, egyszer.
   jogosultsággal. Nem megy sehova rajtad és a Kiflin kívül.
 - A `.env` és az adatbázis a `.gitignore`-ban van. A CI minden
   pusholásnál ellenőrzi, hogy nem szivárgott-e ki titok.
-- A **beszéd** az OpenAI-hoz megy fel feldolgozásra.
+- A **beszéd** és a **feltöltött képek** az OpenAI-hoz mennek fel
+  feldolgozásra.
 
 > [!WARNING]
 > A projekt a [`rohlik-mcp`](https://github.com/tomaspavlin/rohlik-mcp)
@@ -330,11 +352,16 @@ szinkronizálásnál történik, egyszer.
 ## Ismert korlátok
 
 - A rendelés leadása mindig kézi.
+- **Nem tud idősávot foglalni és címet váltani.** Ezeket a Kifli API-ja
+  nem adja ki olvasáson túl. Az idősávokat felolvassa árral együtt, a
+  választás a Kifli appban történik — ahol úgyis fizetsz.
 - **Nem lát termékleírást** — a Kifli keresője nem adja vissza, így a
   minőségi különbségeket a termék nevéből olvassa ki.
 - A Kifli időnként más árat számol, mint ami a keresőben látszik
   (akciók, kimért áruk). Ilyenkor a kosár ára az igaz, és az asszisztens
   azt mondja.
+- **A kézírás felismerése nem tökéletes.** Ezért minden bizonytalan
+  tételre rákérdez, ahelyett hogy találgatna.
 - A hangfelismerés ritka márkaneveket félrehallhat. A gyakoriakat
   (Old Spice, Hellmann's, Heinz, Finish) megtanítottuk neki.
 - **Autóban visszhangozhat** — ott erős a hangszóró és a mikrofon közti
@@ -345,23 +372,24 @@ szinkronizálásnál történik, egyszer.
 ## Fejlesztés
 
 ```bash
-python3 tesztek.py       # 32 funkcionális teszt, hálózat nélkül
+python3 tesztek.py       # 56 funkcionális teszt, hálózat nélkül
 python3 ellenorzes.py    # statikus ellenőrzés
 ```
 
 A tesztek a Kifli valódi válaszformátumaival dolgoznak, hamis MCP
 szerverrel — nem kell hozzá fiók és internet. Minden pusholásnál a CI is
-lefuttatja őket.
+lefuttatja őket, Python 3.9-en és 3.12-n.
 
-Amit külön ellenőriznek, mert ezekben csendben lehet hibázni:
+Amit külön ellenőriznek, mert ezekben **csendben lehet hibázni**:
 
 - a „30 tojás" 3 dobozt jelent, nem 30-at
+- a „16 tekercses csomag" 1 csomag, nem 16 — a kiszerelés nem darabszám
 - a kosár törléséhez a **Cart ID** kell, nem a termék ID-ja
-- egy eszközhívás soha nem dobhat kivételt (a modell örökre várna)
+- egy eszközhívás soha nem dobhat kivételt — a modell örökre várna
 - a próba mód nem ír a valódi kosárba
 - a kilogramm és a liter nem keveredik az egységár-összehasonlításban
-- a kiszerelés nem lesz darabszám („16 tekercses csomag" az 1, nem 16)
 - nem állítja, hogy lefoglalt egy idősávot, amit nem tud lefoglalni
+- üres találatnál nem talál ki terméket
 
 ## Közreműködés
 

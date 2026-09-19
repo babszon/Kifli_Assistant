@@ -94,19 +94,19 @@ Products in cart:
   Quantity: 2
   Price: 1678 HUF
   Category: Tejtermék és tojás
-  Cart ID: 376224796
+  Cart ID: 123456789
 
 • Kitchin Extra szűz olívaolaj (Kitchin)
   Quantity: 1
   Price: 4629 HUF
   Category: Tartós élelmiszer
-  Cart ID: 376224110
+  Cart ID: 123456110
 
 • Házi vekni (Rádi)
   Quantity: 1
   Price: 599 HUF
   Category: Pékség és cukrászat
-  Cart ID: 376224615"""
+  Cart ID: 123456615"""
 
 GYAKORI = """🛒 MOST FREQUENTLY PURCHASED ITEMS
 
@@ -258,7 +258,7 @@ def _():
     assert len(r["tetelek"]) == 3
     assert r["osszesen"] == 6067
     assert r["rendelheto"] is False
-    assert r["tetelek"][0]["cart_item_id"] == "376224796", "NEM a termek ID"
+    assert r["tetelek"][0]["cart_item_id"] == "123456789", "NEM a termek ID"
     assert r["tetelek"][0]["darab"] == 2
 
 
@@ -514,7 +514,7 @@ def _():
     mcp.naplo.clear()
     r = a.kosarbol_kivesz("vekni")
     assert r.get("levettem"), r
-    assert ("remove_from_cart", {"order_field_id": "376224615"}) in mcp.naplo
+    assert ("remove_from_cart", {"order_field_id": "123456615"}) in mcp.naplo
 
 
 @teszt("tobb talalatra visszakerdez, nem talalgat")
@@ -934,6 +934,60 @@ def _():
                 assert e.code == 404
     finally:
         k.shutdown()
+
+
+fejezet("Dokumentacio")
+
+
+@teszt("a README minden Python fajlt emlit")
+def _():
+    import re
+    olvas = Path("README.md").read_text(encoding="utf-8")
+    emlitett = set(re.findall(r"`([a-z_]+\.py)`", olvas))
+    osszes = {f.name for f in Path(".").glob("*.py")}
+    hianyzo = osszes - emlitett
+    assert not hianyzo, f"nincs a README-ben: {sorted(hianyzo)}"
+
+
+@teszt("a README hivatkozasai leteznek")
+def _():
+    import re
+    olvas = Path("README.md").read_text(encoding="utf-8")
+    utak = (re.findall(r'src="([^"h][^"]*)"', olvas)
+            + re.findall(r"\]\((docs/[^)]+)\)", olvas)
+            + re.findall(r"`(webui/[^`]+)`", olvas))
+    for ut in set(utak):
+        assert Path(ut).exists(), f"hianyzo hivatkozas: {ut}"
+
+
+@teszt("a README eszkozszama egyezik a kodeval")
+def _():
+    import asszisztens as asz
+    olvas = Path("README.md").read_text(encoding="utf-8")
+    szamok = {13: "tizenhárom", 14: "tizennégy", 15: "tizenöt",
+              16: "tizenhat", 17: "tizenhét", 18: "tizennyolc",
+              19: "tizenkilenc", 20: "húsz"}
+    szo = szamok.get(len(asz.ESZKOZOK))
+    assert szo, f"{len(asz.ESZKOZOK)} eszkoz - bovitsd a szamnev-tablat"
+    assert szo in olvas, (
+        f"{len(asz.ESZKOZOK)} eszkoz van, de a README nem mondja "
+        f"'{szo}'-nak")
+
+
+@teszt("a dokumentacioban nincs szemelyes adat")
+def _():
+    import re
+    minta = re.compile(
+        r"@gmail|@freemail|\+36\s*\d|sk-[A-Za-z0-9_-]{20,}"
+        r"|\b\d{4}\s+Budapest\b", re.I)
+    for f in list(Path(".").glob("*.md")) + list(Path("docs").glob("*.md")):
+        szoveg = f.read_text(encoding="utf-8")
+        for sor in szoveg.splitlines():
+            # a pelda-ertekek rendben vannak
+            if "pelda.hu" in sor or "példa" in sor.lower():
+                continue
+            t = minta.search(sor)
+            assert not t, f"{f.name}: {t.group(0)}"
 
 
 # ────────────────────────────────────────────────────── osszegzes
