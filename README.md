@@ -240,8 +240,9 @@ lehet vágni anélkül, hogy az asszisztens visszahallaná magát.
   felület   ◄── esemény ── Kifli.hu · tanulás · egységár
 ```
 
-Az asszisztens **tizenhárom eszközt** kap: keresés, kosárkezelés,
-akciók, korábbi rendelések, szállítási idősávok. A nyelvi modell dönti
+Az asszisztens **tizenhat eszközt** kap: keresés, kosárkezelés,
+mennyiség-módosítás, akciók, korábbi rendelések, szállítási idősávok,
+előfizetés és szállítási cím. A nyelvi modell dönti
 el, mit mikor hív.
 
 De a **mennyiségszámítás, az egységár és a visszaigazoló mondatok a
@@ -355,6 +356,8 @@ Amit külön ellenőriznek, mert ezekben csendben lehet hibázni:
 - egy eszközhívás soha nem dobhat kivételt (a modell örökre várna)
 - a próba mód nem ír a valódi kosárba
 - a kilogramm és a liter nem keveredik az egységár-összehasonlításban
+- a kiszerelés nem lesz darabszám („16 tekercses csomag" az 1, nem 16)
+- nem állítja, hogy lefoglalt egy idősávot, amit nem tud lefoglalni
 
 ## Közreműködés
 

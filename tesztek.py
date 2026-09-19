@@ -118,9 +118,28 @@ GYAKORI = """🛒 MOST FREQUENTLY PURCHASED ITEMS
    📊 8× orders • 8 units
    🆔 60476"""
 
+PREMIUM = """⭐ PREMIUM STATUS: Active
+
+📅 SUBSCRIPTION:
+   Type: MONTHLY
+   Start: 2026. aug. 23.
+   End: 2026. szept. 22.
+
+🎁 BENEFITS:
+   • Free delivery: 4 remaining
+   • Express delivery: 3 remaining"""
+
+FIOK = json.dumps({
+    "delivery": {"address": {
+        "id": 6236413, "fullAddress": "Példa utca 1, 1011 Budapest",
+        "city": "Budapest", "postalCode": "1011"}},
+    "cart": {"total_price": 6067, "can_make_order": False},
+})
+
 IDOSAVOK = json.dumps({"slots": [{"days": [{"slots": [
     {"slotId": 1, "since": "2026-09-19 08:00", "till": "2026-09-19 10:00",
      "capacity": "GREEN", "price": 490, "timeWindow": "08:00 – 10:00",
+     "premium": True, "eco": False,
      "timeSlotCapacityDTO": {"capacityMessage": "Szabad"}},
     {"slotId": 2, "since": "2026-09-19 10:00", "till": "2026-09-19 12:00",
      "capacity": "RED", "price": 0, "timeWindow": "10:00 – 12:00",
@@ -151,6 +170,8 @@ class HamisMCP:
             "get_order_detail": "Rendeles 88001:\n• Tej 2x",
             "get_upcoming_orders": "Nincs beutemezett rendeles.",
             "get_meal_suggestions": "Reggeli:\n• Kenyér\n• Tojás",
+            "get_premium_info": PREMIUM,
+            "get_account_data": FIOK,
         }.get(nev, "ok")
 
 
@@ -465,6 +486,37 @@ def _():
     assert r.get("szaraz_futas")
     assert not any(n == "add_to_cart" for n, _ in mcp.naplo), mcp.naplo
     assert "figyelmeztetes" in r, "az LLM-nek tudnia kell, hogy proba volt"
+
+
+@teszt("elofizetes: kiolvassa az allapotot es a kedvezmenyeket")
+def _():
+    a = uj_asszisztens()
+    r = a.elofizetesem()
+    assert r.get("aktiv") is True, r
+    assert r.get("tipus") == "MONTHLY", r
+
+
+@teszt("szallitasi cim kiolvasasa")
+def _():
+    a = uj_asszisztens()
+    r = a.szallitasi_cimem()
+    assert "Példa utca" in (r.get("cim") or ""), r
+    assert "Kifli appban" in r.get("megjegyzes", ""), "hianyzik a korlat"
+
+
+@teszt("idosav: nem allitja, hogy lefoglalta")
+def _():
+    a = uj_asszisztens()
+    r = a.szallitasi_idosavok()
+    szoveg = json.dumps(r, ensure_ascii=False).lower()
+    # Allito mult ideju kijelentesek tiltva - a tagadas ("nem lehet
+    # lefoglalni") viszont pont hogy kell
+    for tiltott in ("lefoglaltam", "lefoglalva", "kivalasztottam",
+                    "beallitottam", "sikeresen"):
+        assert tiltott not in szoveg, f"felrevezeto allitas: {tiltott}"
+    assert "nem lehet lefoglalni" in r["megjegyzes"].lower()
+    assert r["idosavok"][0].get("premium") is True
+    assert r["legkorabbi"]["ido"].startswith("08:00")
 
 
 @teszt("nem talalgatunk a 'Can order' jelzesbol")

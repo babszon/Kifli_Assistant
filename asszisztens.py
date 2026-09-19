@@ -193,6 +193,22 @@ DONTESI ELVEK
 - Mielott nagyobb rendelest zarnal le, erdemes a beutemezett_rendelesek
   eszkozzel ellenorizni, hogy nincs-e mar folyamatban rendeles.
 
+SZALLITAS, ELOFIZETES, CIM
+- Ha a szallitas idejerol kerdez, hivd a szallitasi_idosavok eszkozt, es
+  mondd meg a LEGKORABBI lehetoseget az araval. Legfeljebb ket-harom
+  idopontot sorolj fel, tobbet soha.
+- Az idosavot INNEN NEM LEHET LEFOGLALNI. A felhasznalo a Kifli appban
+  valasztja ki, a fizetessel egyutt. Soha ne allitsd, hogy lefoglaltad,
+  beallitottad vagy kivalasztottad.
+- Ha a szallitas araról vagy az elofizetesrol kerdez, hivd az
+  elofizetesem eszkozt. Ha van aktiv Premium, azt erdemes megemliteni -
+  peldaul hogy ingyenes a szallitas, vagy hany expressz maradt.
+- Az arak amugy is a felhasznalo sajat fiokjabol jonnek, tehat amit a
+  keresesben latsz, az mar a ra vonatkozo ar. Ne szamolj hozza vagy
+  vonj le belole semmit.
+- Ha a cimrol kerdez, hivd a szallitasi_cimem eszkozt. A cim
+  MEGVALTOZTATASA sem lehetseges innen - azt is a Kifli appban teszi.
+
 AR-ERTEK ARANY
 Ha a felhasznalo azt kerdezi, mi a legjobb ar-ertek arany, NE csak az
 egysegarat nezd. A termeknev maga sok minosegi informaciot hordoz, es
@@ -384,6 +400,23 @@ ESZKOZOK = [
                               "description": "hany terméket (1-50)"},
                 },
             },
+        },
+        {
+            "name": "elofizetesem",
+            "description": ("A felhasznalo Kifli Premium / Xtra "
+                            "elofizetesenek allapota: aktiv-e, mennyi "
+                            "ingyenes szallitas es expressz maradt. Akkor "
+                            "hivd, ha a szallitas araról, az elofizetesrol "
+                            "vagy a kedvezmenyekrol kerdez."),
+            "parameters": {"type": "object", "properties": {}},
+        },
+        {
+            "name": "szallitasi_cimem",
+            "description": ("A jelenleg kivalasztott szallitasi cim es a "
+                            "kovetkezo szallitas adatai. Akkor hivd, ha a "
+                            "felhasznalo azt kerdezi, hova megy a rendeles, "
+                            "vagy melyik cimre szallitanak."),
+            "parameters": {"type": "object", "properties": {}},
         },
         {
             "name": "szallitasi_idosavok",
@@ -940,6 +973,121 @@ class Asszisztens:
             if sor.strip():
                 print(f"  {HA}{sor[:76]}{ALAP}")
 
+    def elofizetesem(self):
+        """
+        A Premium / Xtra elofizetes allapota.
+
+        Az arak amugy is a bejelentkezett munkamenetbol jonnek, tehat az
+        Xtra-arakat mar most is latjuk. Ez arra kell, hogy az asszisztens
+        TUDJON rola, es megemlithesse - peldaul hogy ingyenes a szallitas.
+        """
+        try:
+            nyers = self.mcp.hiv("get_premium_info")
+        except MCPHiba as e:
+            return {"hiba": str(e)}
+
+        adatok = self._elofizetes_ertelmez(nyers)
+        if adatok.get("aktiv"):
+            reszek = ["Premium elofizetes aktiv"]
+            if adatok.get("ingyenes_szallitas") is not None:
+                reszek.append(f"{adatok['ingyenes_szallitas']} ingyenes "
+                              f"szallitas maradt")
+            if adatok.get("expressz") is not None:
+                reszek.append(f"{adatok['expressz']} expressz maradt")
+            print(f"\n{HA}  {', '.join(reszek)}{ALAP}")
+        else:
+            print(f"\n{HA}  Nincs aktiv Premium elofizetes.{ALAP}")
+
+        adatok["nyers_reszlet"] = nyers[:1500]
+        return adatok
+
+    @staticmethod
+    def _elofizetes_ertelmez(nyers):
+        """A get_premium_info szoveges kimenetebol a lenyeg."""
+        adatok = {"aktiv": None}
+        if not nyers:
+            return adatok
+
+        t = re.search(r"PREMIUM STATUS:\s*(\w+)", nyers, re.I)
+        if t:
+            adatok["aktiv"] = t.group(1).strip().lower() == "active"
+        t = re.search(r"Type:\s*(.+)", nyers)
+        if t:
+            adatok["tipus"] = t.group(1).strip()
+        t = re.search(r"End:\s*(.+)", nyers)
+        if t:
+            adatok["lejar"] = t.group(1).strip()
+
+        # A szabad szallitasok szama tobbfele formaban johet
+        for minta, kulcs in (
+                (r"(?:free\s*delivery|ingyenes).*?(\d+)", "ingyenes_szallitas"),
+                (r"(?:express|expressz).*?(\d+)", "expressz"),
+                (r"remaining[^\d]*(\d+)", "maradt")):
+            t = re.search(minta, nyers, re.I)
+            if t:
+                adatok[kulcs] = int(t.group(1))
+        return adatok
+
+    def szallitasi_cimem(self):
+        """A jelenlegi szallitasi cim es a kovetkezo szallitas."""
+        try:
+            nyers = self.mcp.hiv("get_account_data")
+        except MCPHiba as e:
+            return {"hiba": str(e)}
+
+        adatok = self._cim_ertelmez(nyers)
+        if adatok.get("cim"):
+            print(f"\n{HA}  Szallitasi cim: {adatok['cim']}{ALAP}")
+        else:
+            print(f"\n{HA}  A cimet nem sikerult kiolvasni.{ALAP}")
+
+        adatok["megjegyzes"] = (
+            "A cim megvaltoztatasa nem lehetseges innen - azt a Kifli "
+            "appban tudja atallitani a felhasznalo.")
+        return adatok
+
+    @staticmethod
+    def _cim_ertelmez(nyers):
+        """
+        A get_account_data kimenetebol a szallitasi cim.
+
+        A valasz sok mindent tartalmaz; csak a cimet es a kovetkezo
+        szallitast szedjuk ki, hogy ne terheljuk feleslegesen a modellt.
+        """
+        adatok = {}
+        if not nyers:
+            return adatok
+
+        # JSON-kent is johet
+        try:
+            json_adat = json.loads(nyers)
+
+            def bejar(csomo):
+                if isinstance(csomo, dict):
+                    if csomo.get("fullAddress"):
+                        adatok.setdefault("cim", csomo["fullAddress"])
+                        adatok.setdefault("varos", csomo.get("city"))
+                        return
+                    for e in csomo.values():
+                        bejar(e)
+                elif isinstance(csomo, list):
+                    for e in csomo:
+                        bejar(e)
+
+            bejar(json_adat)
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+        if not adatok.get("cim"):
+            for minta, kulcs in (
+                    (r'"?fullAddress"?\s*[:=]\s*"?([^",\n]+)', "cim"),
+                    (r"(?:Address|Cim|Cím)\s*[:=]\s*(.+)", "cim"),
+                    (r'"?city"?\s*[:=]\s*"?([^",\n]+)', "varos")):
+                t = re.search(minta, nyers, re.I)
+                if t:
+                    adatok[kulcs] = t.group(1).strip()
+        return adatok
+
     def szallitasi_idosavok(self):
         try:
             nyers = self.mcp.hiv("get_delivery_slots")
@@ -952,13 +1100,25 @@ class Asszisztens:
                     "nyers_reszlet": nyers[:1500]}
 
         print(f"\n{HA}  Legkozelebbi szabad idosavok:{ALAP}")
-        for s in savok[:5]:
+        for s in savok[:6]:
             ar = "ingyenes" if s["ar"] == 0 else f"{s['ar']:.0f} Ft"
-            print(f"  {HA}{s['nap']} {s['ido']}  -  {ar}{ALAP}")
+            jelek = ("".join(j for j, v in (("P", s.get("premium")),
+                                            ("E", s.get("eco"))) if v))
+            print(f"  {HA}{s['nap']} {s['ido']}  -  {ar}"
+                  f"{'  ' + jelek if jelek else ''}{ALAP}")
 
-        return {"idosavok": savok[:10],
-                "megjegyzes": ("A legkorabbi az elso a listaban. Az idosavot "
-                               "a Kifli appban kell veglegesiteni.")}
+        ingyenesek = [s for s in savok if s["ar"] == 0]
+        return {
+            "idosavok": savok[:12],
+            "legkorabbi": savok[0] if savok else None,
+            "ingyenes_savok_szama": len(ingyenesek),
+            "megjegyzes": (
+                "A lista idorendben van, az elso a legkorabbi. Az idosavot "
+                "a felhasznalo a Kifli appban valasztja ki a fizetessel "
+                "egyutt - innen nem lehet lefoglalni. Mondd meg neki a "
+                "legkorabbi lehetoseget es az arat, de ne allitsd, hogy "
+                "lefoglaltad."),
+        }
 
     @staticmethod
     def _idosavok_ertelmez(nyers):
@@ -983,6 +1143,8 @@ class Asszisztens:
                                   f"{str(csomo.get('till'))[11:16]}",
                         "ar": csomo.get("price", 0),
                         "szabad": kapacitas.get("capacityMessage"),
+                        "premium": bool(csomo.get("premium")),
+                        "eco": bool(csomo.get("eco")),
                     })
                     return
                 for ertek in csomo.values():
