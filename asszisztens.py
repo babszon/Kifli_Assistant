@@ -108,12 +108,22 @@ hogy "folytassam?". Csak ott allj meg, ahol tenyleg dontenie kell.
    javasolj, kerdezz, tedd be, majd LEPJ A KOVETKEZORE magadtol.
    A vegen mondd meg, ha valamelyik kimaradt.
    SOHA ne hagyj ki tetelt csendben.
-9. MENNYISEGEK. A felhasznalo altal mondott mennyiseget (2 db, 15 db,
-   2 kilo, fel kilo) add at a termek_keres 'mennyiseg_szoveg'
-   parametereben SZO SZERINT. A darabszamot a program szamolja ki
-   ebbol - te ne szamolj. Ha a felhasznalo 2 darabot kert, a
-   visszaigazolasban 2 darabnak kell szerepelnie; ha 1 szerepel,
-   szolj, hogy valami nem stimmel.
+9. MENNYISEGEK - EZ FONTOS.
+   A kosarba_tesz 'darab' parametere azt mondja meg, HANY CSOMAGOT
+   teszunk a kosarba. Ez NEM ugyanaz, mint a kiszereles.
+
+   - "egy 16 tekercses csomag vecepapir"  -> darab = 1
+   - "harom doboz tojas"                  -> darab = 3
+   - "ket liter tej", a kiszereles 1 liter -> darab = 2
+   - "harminc deka sajt", a kiszereles 400 g -> darab = 1
+   - ha nem mondott mennyiseget           -> hagyd ki a parametert
+
+   A kiszereles (16 tekercs, 10 db, 1 liter) a termek TULAJDONSAGA,
+   sosem a darabszam. Ha a felhasznalo azt mondja, hogy "csak egy
+   kell", az darab = 1, akkor is, ha a csomagban 16 tekercs van.
+
+   Ha mar a kosarban van valami rossz mennyiseggel, a
+   mennyiseget_modosit eszkozt hasznald - NE vedd ki es tedd be ujra.
 
 HIBAK KEZELESE
 Ha egy eszkoz valaszaban 'hiba' mezo van, az a termek NEM kerult be a
@@ -246,8 +256,33 @@ ESZKOZOK = [
                     "termek": {"type": "string",
                                "description": "A normalizalt termeknev, ahogy "
                                               "a felhasznalo hivja (pl. 'ketchup')"},
+                    "darab": {
+                        "type": "integer",
+                        "description":
+                            "Hany CSOMAGOT tegyunk a kosarba. FIGYELEM: ez "
+                            "NEM a kiszereles! Ha a felhasznalo egy 16 "
+                            "tekercses csomag vecepapirt ker, ez 1, nem 16. "
+                            "Ha ket liter tejet ker es a kiszereles 1 liter, "
+                            "ez 2. Ha nem mondott mennyiseget, hagyd ki."},
                 },
                 "required": ["kifli_id", "termek"],
+            },
+        },
+        {
+            "name": "mennyiseget_modosit",
+            "description": ("Egy mar kosarban levo tetel darabszamanak "
+                            "modositasa. Ezt hasznald, ha a felhasznalo "
+                            "keveselli vagy sokallja a mennyiseget - ne "
+                            "vedd ki es tedd be ujra."),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "termek": {"type": "string",
+                               "description": "a termek neve vagy egy resze"},
+                    "darab": {"type": "integer",
+                              "description": "az uj darabszam (legalabb 1)"},
+                },
+                "required": ["termek", "darab"],
             },
         },
         {
@@ -484,7 +519,7 @@ class Asszisztens:
             if t.get("ar"):
                 self.arak_szerint[t["id"]] = t["ar"]
 
-    def kosarba_tesz(self, kifli_id, termek):
+    def kosarba_tesz(self, kifli_id, termek, darab=None):
         talalat = next((t for t in self.utolso_talalatok
                         if t["id"] == kifli_id), None)
         if talalat is None:
@@ -492,11 +527,21 @@ class Asszisztens:
                             "Keress ra eloszor a termek_keres eszkozzel."}
 
         termek = (termek or talalat["nev"]).strip().lower()
-        mennyiseg = self._mennyiseg(termek)
 
-        db, tobblet, megjegyzes = szinkron.darabszam(
-            mennyiseg, talalat.get("mennyiseg"), talalat.get("egyseg"),
-            p.kimert_e(talalat))
+        # A darabszamot AZ LLM adja meg, mert o beszelt a felhasznaloval.
+        # Korabban a termek NEVEBOL probaltuk kiolvasni, es a "16 tekercses
+        # vecepapir" nevbol 16 csomag lett - pedig a 16 a KISZERELES, nem
+        # a rendelt mennyiseg. Ez a hiba nehezen volt eszrevehetö.
+        megjegyzes = tobblet = None
+        if darab is not None:
+            try:
+                db = max(1, int(darab))
+            except (TypeError, ValueError):
+                return {"hiba": f"A darabszam nem szam: {darab!r}"}
+        else:
+            db = 1
+            megjegyzes = ("Nem mondtad meg a darabszamot, ezert 1-et tettem "
+                          "be. Ha tobb kell, mondd meg hanyat.")
 
         if self.szaraz:
             print(f"  {HA}[szaraz] + {db}x {talalat['nev']}{ALAP}")
@@ -548,6 +593,78 @@ class Asszisztens:
         if megjegyzes:
             valasz["megjegyzes"] = megjegyzes
         return valasz
+
+    def mennyiseget_modosit(self, termek, darab):
+        """
+        Egy mar kosarban levo tetel darabszamanak modositasa.
+
+        A Kifli API-ban nincs kozvetlen 'mennyiseget allits' muvelet,
+        ezert levesszuk es ujra betesszuk a kivant darabszammal. Ez
+        biztonsagosabb, mint ha az LLM probalna ugyanezt ket lepesben -
+        ugy konnyen felezodik vagy duplazodik a mennyiseg.
+        """
+        try:
+            uj_darab = max(1, int(darab))
+        except (TypeError, ValueError):
+            return {"hiba": f"A darabszam nem szam: {darab!r}"}
+
+        try:
+            nyers = self.mcp.hiv("get_cart_content")
+        except MCPHiba as e:
+            return {"hiba": str(e)}
+
+        tetelek = self._kosar_ertelmez(nyers)["tetelek"]
+        mit = (termek or "").lower().strip()
+        if not mit:
+            return {"hiba": "Nem mondtad meg, melyik tetelt."}
+
+        jeloltek = [t for t in tetelek if mit in t["nev"].lower()]
+        if not jeloltek:
+            return {"hiba": f"Nem talaltam a kosarban: {termek}",
+                    "kosarban": [t["nev"] for t in tetelek]}
+        if len(jeloltek) > 1:
+            return {"tobb_talalat": [t["nev"] for t in jeloltek],
+                    "kerdes": "Tobb tetelre is illik. Melyikre gondoltal?"}
+
+        tetel = jeloltek[0]
+        if tetel.get("darab") == uj_darab:
+            return {"valtozatlan": tetel["nev"], "darab": uj_darab,
+                    "uzenet": "Mar ennyi van belole."}
+
+        # A kosarban levo tetel Cart ID-ja alapjan keressuk meg a
+        # termek ID-jat a korabbi talalatok kozott
+        talalat = next((t for t in self.utolso_talalatok
+                        if t["nev"].lower() == tetel["nev"].lower()), None)
+        if talalat is None:
+            return {"hiba": f"Nem tudom, melyik termek ez a Kiflin. "
+                            f"Keress ra eloszor: {tetel['nev']}"}
+
+        if self.szaraz:
+            print(f"  {HA}[szaraz] {tetel['nev']}: "
+                  f"{tetel.get('darab')} -> {uj_darab}{ALAP}")
+            return {"szaraz_futas": True, "termek": tetel["nev"],
+                    "uj_darab": uj_darab}
+
+        try:
+            self.mcp.hiv("remove_from_cart",
+                         {"order_field_id": str(tetel["cart_item_id"])})
+            self.mcp.hiv("add_to_cart", {"products": [
+                {"product_id": talalat["id"], "quantity": uj_darab}]})
+        except MCPHiba as e:
+            return {"hiba": f"Nem sikerult a modositas: {e}"}
+
+        bent, kosar_ar = self._kosarban_van(talalat["id"], tetel["nev"])
+        if not bent:
+            return {"hiba": f"A modositas utan a(z) '{tetel['nev']}' NEM "
+                            f"maradt a kosarban. Nezd meg a kosarat."}
+
+        print(f"  {Z}~ {tetel['nev']}: "
+              f"{tetel.get('darab')} -> {uj_darab}{ALAP}")
+        return {"modositva": tetel["nev"],
+                "regi_darab": tetel.get("darab"), "uj_darab": uj_darab,
+                "ar": kosar_ar,
+                "adatok": f"{tetel['nev']}, most {uj_darab} darab"
+                          + (f", {kosar_ar:.0f} forint." if kosar_ar else ".")}
 
     def kosar_megmutat(self):
         """A VALODI Kifli kosar tartalma, nem a memoria."""
@@ -913,14 +1030,6 @@ class Asszisztens:
                            "a rendelest.")}
 
     # --------------------------------------------------------------- belsok
-
-    def _mennyiseg(self, termek_szoveg):
-        """A mennyiseget a mar bevalt normalizaloval szedjuk ki."""
-        try:
-            eredmeny = llm.normalizal([termek_szoveg])
-            return (eredmeny[0].get("quantity") if eredmeny else None)
-        except llm.LLMHiba:
-            return None
 
     def _talalatok_kiir(self, termek, talalatok):
         """A reszletes, kepernyos alak. Ez SOHA nem hangzik el."""

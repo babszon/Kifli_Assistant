@@ -343,6 +343,84 @@ def _():
     assert "hiba" in r, r
 
 
+@teszt("a kiszereles NEM lesz darabszam (16 tekercses vecepapir)")
+def _():
+    # Ez volt a valodi hiba: a "16 tekercses vecepapir" nevbol a program
+    # 16 CSOMAGOT tett be, pedig a 16 a kiszereles.
+    kosar = KOSAR.replace('• Házi vekni (Rádi)',
+                          '• Magyar Tej ESL Tej 2,8% (Magyar)')
+    mcp = HamisMCP(kosar=kosar)
+    a = uj_asszisztens(mcp)
+    a.termek_keres("tej")
+    mcp.naplo.clear()
+    a.kosarba_tesz(16321, "16 tekercses vécépapír", darab=1)
+    hivas = next(h for h in mcp.naplo if h[0] == "add_to_cart")
+    db = hivas[1]["products"][0]["quantity"]
+    assert db == 1, f"{db} csomag ment be 1 helyett"
+
+
+@teszt("darabszam nelkul 1-et tesz be es szol")
+def _():
+    # A kosar tartalmazza a terméket, kulonben a betetel-ellenorzes
+    # (helyesen) hibat jelezne
+    kosar = KOSAR.replace('• Házi vekni (Rádi)',
+                          '• Magyar Tej ESL Tej 2,8% (Magyar)')
+    a = uj_asszisztens(HamisMCP(kosar=kosar))
+    a.termek_keres("tej")
+    r = a.kosarba_tesz(16321, "tej")
+    assert "hiba" not in r, r
+    assert r.get("darab") == 1
+    assert "megjegyzes" in r, "nem szolt, hogy nem tudta a darabszamot"
+
+
+@teszt("az LLM altal adott darabszam ervenyesul")
+def _():
+    kosar = KOSAR.replace('• Házi vekni (Rádi)',
+                          '• Magyar Tej ESL Tej 2,8% (Magyar)')
+    mcp = HamisMCP(kosar=kosar)
+    a = uj_asszisztens(mcp)
+    a.termek_keres("tej")
+    mcp.naplo.clear()
+    a.kosarba_tesz(16321, "tej", darab=3)
+    hivas = next(h for h in mcp.naplo if h[0] == "add_to_cart")
+    assert hivas[1]["products"][0]["quantity"] == 3
+
+
+@teszt("ertelmetlen darabszam nem szall el")
+def _():
+    a = uj_asszisztens()
+    a.termek_keres("tej")
+    for rossz in ("sok", None, -5, 0, 2.7):
+        r = a.kosarba_tesz(16321, "tej", darab=rossz)
+        assert isinstance(r, dict)
+        if "hiba" not in r and "darab" in r:
+            assert r["darab"] >= 1, f"{rossz} -> {r['darab']}"
+
+
+@teszt("mennyiseget_modosit: levesz es ujra betesz")
+def _():
+    mcp = HamisMCP()
+    a = uj_asszisztens(mcp)
+    a.termek_keres("tej")
+    # A kosarban a "Házi vekni" van; keressuk meg elobb, hogy ismerjuk
+    a.utolso_talalatok.append(
+        {"id": 5611, "nev": "Házi vekni", "ar": 599,
+         "mennyiseg": 500, "egyseg": "g"})
+    mcp.naplo.clear()
+    r = a.mennyiseget_modosit("vekni", 3)
+    nevek = [h[0] for h in mcp.naplo]
+    assert "remove_from_cart" in nevek and "add_to_cart" in nevek, nevek
+    hozzaad = next(h for h in mcp.naplo if h[0] == "add_to_cart")
+    assert hozzaad[1]["products"][0]["quantity"] == 3
+
+
+@teszt("mennyiseget_modosit ismeretlen tetelre nem talalgat")
+def _():
+    a = uj_asszisztens()
+    r = a.mennyiseget_modosit("nincs ilyen termek", 2)
+    assert "hiba" in r
+
+
 @teszt("kosarba_tesz ismeretlen ID-t visszautasit")
 def _():
     a = uj_asszisztens()
