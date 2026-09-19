@@ -24,7 +24,14 @@ import queue
 # ki, es 429-et kapnank. Ezert hivasok kozott minimalis szunetet tartunk,
 # es 429 utan varunk, majd ujraprobalunk.
 MIN_SZUNET = 0.7          # masodperc ket hivas kozott
-UJRA_VARAKOZAS = (2, 5, 11)   # 429 utan ennyit varunk, sorban
+# A ratakorlatok percben mernek, nem masodpercben. A korabbi 2-5-11
+# tul rovid volt: ha a Kifli tartosan lassit, tobbet kell varni.
+UJRA_VARAKOZAS = (2, 6, 15, 40)
+
+# Ha egyszer 429-et kaptunk, egy ideig lassabban kuldunk - igy nem
+# esunk ujra bele rogton. A szunet fokozatosan all vissza.
+BUNTETO_SZUNET = 3.0
+BUNTETES_HOSSZA = 90.0    # masodperc
 
 
 class MCPHiba(Exception):
@@ -48,6 +55,7 @@ class MCPKliens:
         # Egyszerre csak egy hivas mehet ki, es kozottuk szunet van
         self._utemezo = threading.Lock()
         self._utolso_hivas = 0.0
+        self._buntetes_vege = 0.0
 
     # ------------------------------------------------------------ eletciklus
 
@@ -168,9 +176,13 @@ class MCPKliens:
         mondat sem futtatja ki a Kifli korlatjat.
         """
         with self._utemezo:
-            eltelt = time.monotonic() - self._utolso_hivas
-            if eltelt < MIN_SZUNET:
-                time.sleep(MIN_SZUNET - eltelt)
+            most = time.monotonic()
+            # Buntetesi idoszakban lassabban kuldunk
+            szunet = (BUNTETO_SZUNET if most < self._buntetes_vege
+                      else MIN_SZUNET)
+            eltelt = most - self._utolso_hivas
+            if eltelt < szunet:
+                time.sleep(szunet - eltelt)
 
             utolso = None
             for probalkozas in range(len(UJRA_VARAKOZAS) + 1):
@@ -180,6 +192,8 @@ class MCPKliens:
                     return eredmeny
                 except MCPRataHiba as e:
                     utolso = e
+                    # Innentol lassabban kuldunk, hogy ne essunk ujra bele
+                    self._buntetes_vege = time.monotonic() + BUNTETES_HOSSZA
                     if probalkozas >= len(UJRA_VARAKOZAS):
                         break
                     var = UJRA_VARAKOZAS[probalkozas]
@@ -191,9 +205,10 @@ class MCPKliens:
                     raise
 
             self._utolso_hivas = time.monotonic()
-            raise MCPHiba(
-                f"{nev}: a Kifli tul sok kerest kapott, es tobb probalkozas "
-                f"utan sem valaszolt. ({utolso})")
+            raise MCPRataHiba(
+                f"A Kifli most tul sok kerest kap, es {sum(UJRA_VARAKOZAS)} "
+                f"masodperc varakozas utan sem valaszolt. Par perc mulva "
+                f"ujra lehet probalni.")
 
 
 if __name__ == "__main__":

@@ -126,8 +126,10 @@ def listat_kiolvas(kep_adat, model=None):
             ]},
         ],
         "response_format": {"type": "json_object"},
-        "temperature": 0,
     }
+    # A temperature-t szandekosan NEM allitjuk: az ujabb modellek csak
+    # az alapertelmezett erteket fogadjak el, a kepfelismeresnel pedig
+    # ugysem szamit.
 
     keres = urllib.request.Request(
         "https://api.openai.com/v1/chat/completions",
@@ -140,16 +142,31 @@ def listat_kiolvas(kep_adat, model=None):
             valasz = json.loads(v.read().decode("utf-8"))
     except urllib.error.HTTPError as h:
         test = h.read().decode("utf-8", errors="replace")
-        # Az ujabb modellek reasoning modban nem engedik a json_object-et
-        if "reasoning_effort" in test or "response_format" in test:
-            payload.pop("response_format", None)
-            payload["reasoning_effort"] = "none"
+        # Modellenkent eltero korlatok: ha valamelyik mezot nem fogadja
+        # el, kivesszuk es ujraprobaljuk - egyszer.
+        ujra = _kihagyando_mezok(test)
+        if ujra:
+            for mezo in ujra:
+                payload.pop(mezo, None)
+            if "reasoning" in test.lower():
+                payload["reasoning_effort"] = "none"
             return _ujra(keres.full_url, payload, kulcs)
         raise KepHiba(f"HTTP {h.code}: {test[:300]}")
     except urllib.error.URLError as h:
         raise KepHiba(f"Halozati hiba: {h}")
 
     return _feldolgoz(valasz)
+
+
+def _kihagyando_mezok(hibaszoveg):
+    """Melyik mezot nem fogadta el a modell?"""
+    szoveg = hibaszoveg.lower()
+    mezok = []
+    for mezo in ("temperature", "response_format", "reasoning_effort",
+                 "top_p", "detail"):
+        if mezo in szoveg:
+            mezok.append(mezo)
+    return mezok
 
 
 def _ujra(url, payload, kulcs):

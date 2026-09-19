@@ -373,6 +373,9 @@ async function kapcsolodik(){
         ws.send(JSON.stringify({type:'kosar_frissit'}));
       if (e2 && e2.hiba) rendszer(e2.hiba, true);
     }
+    else if (u.type === 'rata_korlat')
+      rendszer('A Kifli most sok kérést kap — lassítok. '
+               + 'Pár percig türelmesebb lesz a keresés.', true);
     else if (u.type === 'kep_allapot') kepAllapot(u);
     else if (u.type === 'hiba') rendszer(u.text, true);
   };

@@ -86,6 +86,8 @@ class Hid:
             except Exception as e:
                 eredmeny = {"hiba": f"Nem sikerult: {e}"}
 
+            if "tul sok kerest" in str(eredmeny.get("hiba", "")):
+                await self.kuld_ui("rata_korlat")
             await self.kuld_ui("tool_done", name=nev, result=eredmeny)
             # A valasz MINDIG menjen vissza, kulonben a modell orokre var
             await self.nyitott.send(json.dumps({
@@ -260,11 +262,17 @@ class Hid:
                                hang=self.beallitasok.get("hang", "marin"),
                                proba=self.beallitasok.get("proba", False))
 
-            # Indulaskor megmutatjuk, mi van mar a kosarban
-            eredmeny = await asyncio.to_thread(
-                self.asszisztens.hivas, "kosar_megmutat", {})
-            await self.kuld_ui("tool_done", name="kosar_megmutat",
-                               result=eredmeny)
+            # Indulaskor megmutatjuk, mi van mar a kosarban. Ha a Kifli
+            # epp lassit, ezt CSENDBEN kihagyjuk - a kosar ugyis frissul,
+            # amint bekerul valami. Az indulast nem akaszthatja meg.
+            try:
+                eredmeny = await asyncio.to_thread(
+                    self.asszisztens.hivas, "kosar_megmutat", {})
+                if "hiba" not in eredmeny:
+                    await self.kuld_ui("tool_done", name="kosar_megmutat",
+                                       result=eredmeny)
+            except Exception:
+                pass
 
             await asyncio.gather(self.openai_esemenyek(),
                                  self.bongeszo_esemenyek())

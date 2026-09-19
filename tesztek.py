@@ -9,6 +9,7 @@ valaszformatumaival. Ha ez zold, az app mukodokepes.
 """
 
 import json
+import os
 import sys
 import tempfile
 import threading
@@ -705,6 +706,79 @@ def _():
     assert [t["megbizhatosag"] for t in r["tetelek"]] == [0.5, 1.0]
 
 
+@teszt("modellkorlatok kezelese (temperature, response_format)")
+def _():
+    import kep
+    esetek = [
+        ("Unsupported value: 'temperature' does not support 0 with this "
+         "model.", ["temperature"]),
+        ("response_format is not supported", ["response_format"]),
+        ("Function tools with reasoning_effort are not supported",
+         ["reasoning_effort"]),
+        ("invalid api key", []),
+    ]
+    for szoveg, vart in esetek:
+        assert kep._kihagyando_mezok(szoveg) == vart, szoveg[:40]
+
+
+@teszt("elutasitott mezo utan ujraprobal, valodi hibanal nem")
+def _():
+    import io
+    import urllib.error
+    import urllib.request
+    import kep
+
+    eredeti = urllib.request.urlopen
+    os.environ.setdefault("OPENAI_API_KEY", "teszt")
+    KEP = b"\xff\xd8\xff\xe0" + b"\x00" * 100
+
+    class V:
+        def __init__(s, d): s.d = d
+        def read(s): return s.d
+        def __enter__(s): return s
+        def __exit__(s, *a): return False
+
+    try:
+        # 1) temperature elutasitva -> masodszorra sikerul
+        allapot = {"n": 0, "elso": None}
+
+        def hamis(keres, timeout=None):
+            allapot["n"] += 1
+            if allapot["n"] == 1:
+                allapot["elso"] = json.loads(keres.data)
+                raise urllib.error.HTTPError(
+                    "u", 400, "bad", {},
+                    io.BytesIO(b'{"error":{"message":"Unsupported value: '
+                               b"'temperature' does not support 0\"}}"))
+            return V(json.dumps({"choices": [{"message": {"content":
+                '{"tetelek":[{"szoveg":"tej","megbizhatosag":0.9}]}'}}]}
+            ).encode())
+
+        urllib.request.urlopen = hamis
+        r = kep.listat_kiolvas(KEP)
+        assert r["tetelek"], "nem jott vissza tétel"
+        assert "temperature" not in allapot["elso"], \
+            "meg mindig kuldi a temperature-t"
+
+        # 2) valodi hiba: NEM probalkozik ujra
+        allapot["n"] = 0
+
+        def mindig_401(keres, timeout=None):
+            allapot["n"] += 1
+            raise urllib.error.HTTPError(
+                "u", 401, "no", {},
+                io.BytesIO(b'{"error":{"message":"bad key"}}'))
+
+        urllib.request.urlopen = mindig_401
+        try:
+            kep.listat_kiolvas(KEP)
+            raise AssertionError("nem dobott hibat")
+        except kep.KepHiba:
+            assert allapot["n"] == 1, "feleslegesen ujraprobalt"
+    finally:
+        urllib.request.urlopen = eredeti
+
+
 @teszt("a bizonytalan tételeket kulon adja at a modellnek")
 def _():
     a = uj_asszisztens()
@@ -818,6 +892,102 @@ def _():
 # ───────────────────────────────────────────── ratakorlat-kezeles
 
 fejezet("Ratakorlat")
+
+
+@teszt("ratakorlat utan lassabban kuld (bunteto szunet)")
+def _():
+    import time
+    import mcp_kliens as mk
+    HAMIS = """
+import json, sys
+n = 0
+for sor in sys.stdin:
+    sor = sor.strip()
+    if not sor: continue
+    u = json.loads(sor)
+    if u.get("method") == "initialize":
+        ki = {"jsonrpc":"2.0","id":u["id"],"result":{
+              "protocolVersion":"2024-11-05","capabilities":{},
+              "serverInfo":{"name":"f","version":"0"}}}
+    elif u.get("method") == "tools/call":
+        n += 1
+        if n == 1:
+            ki = {"jsonrpc":"2.0","id":u["id"],"result":{"content":[
+                  {"type":"text","text":"HTTP 429: Too Many Requests"}],
+                  "isError":True}}
+        else:
+            ki = {"jsonrpc":"2.0","id":u["id"],"result":{"content":[
+                  {"type":"text","text":"ok"}]}}
+    else:
+        continue
+    sys.stdout.write(json.dumps(ki) + chr(10)); sys.stdout.flush()
+"""
+    p = Path(tempfile.gettempdir()) / "hamis_bunt.py"
+    p.write_text(HAMIS)
+    regi = (mk.UJRA_VARAKOZAS, mk.MIN_SZUNET, mk.BUNTETO_SZUNET,
+            mk.BUNTETES_HOSSZA)
+    mk.UJRA_VARAKOZAS = (0.01,)
+    mk.MIN_SZUNET, mk.BUNTETO_SZUNET, mk.BUNTETES_HOSSZA = 0.01, 0.25, 30
+    try:
+        with mk.MCPKliens(parancs=["python3", str(p)]) as m:
+            m.hiv("x")                      # 429 -> ujraprobal -> ok
+            t0 = time.monotonic()
+            m.hiv("y")                      # buntetesi idoszakban vagyunk
+            eltelt = time.monotonic() - t0
+            assert eltelt >= 0.2, (
+                f"nem lassitott a 429 utan ({eltelt:.2f} mp)")
+    finally:
+        (mk.UJRA_VARAKOZAS, mk.MIN_SZUNET, mk.BUNTETO_SZUNET,
+         mk.BUNTETES_HOSSZA) = regi
+        p.unlink(missing_ok=True)
+
+
+@teszt("vegleges ratakorlatnal ertheto uzenet")
+def _():
+    import mcp_kliens as mk
+    HAMIS = """
+import json, sys
+for sor in sys.stdin:
+    sor = sor.strip()
+    if not sor: continue
+    u = json.loads(sor)
+    if u.get("method") == "initialize":
+        ki = {"jsonrpc":"2.0","id":u["id"],"result":{
+              "protocolVersion":"2024-11-05","capabilities":{},
+              "serverInfo":{"name":"f","version":"0"}}}
+    elif u.get("method") == "tools/call":
+        ki = {"jsonrpc":"2.0","id":u["id"],"result":{"content":[
+              {"type":"text","text":"HTTP 429: Too Many Requests"}],
+              "isError":True}}
+    else:
+        continue
+    sys.stdout.write(json.dumps(ki) + chr(10)); sys.stdout.flush()
+"""
+    p = Path(tempfile.gettempdir()) / "hamis_vegleges.py"
+    p.write_text(HAMIS)
+    regi = (mk.UJRA_VARAKOZAS, mk.MIN_SZUNET, mk.BUNTETO_SZUNET)
+    mk.UJRA_VARAKOZAS = (0.01, 0.01)
+    mk.MIN_SZUNET, mk.BUNTETO_SZUNET = 0.01, 0.01
+    try:
+        with mk.MCPKliens(parancs=["python3", str(p)]) as m:
+            try:
+                m.hiv("x")
+                raise AssertionError("nem dobott hibat")
+            except mk.MCPHiba as e:
+                uzenet = str(e)
+                assert "tul sok kerest" in uzenet, uzenet
+                assert "par perc" in uzenet.lower(), (
+                    "nem mondja meg, mit tegyen a felhasznalo")
+    finally:
+        (mk.UJRA_VARAKOZAS, mk.MIN_SZUNET, mk.BUNTETO_SZUNET) = regi
+        p.unlink(missing_ok=True)
+
+
+@teszt("a felulet jelzi a ratakorlatot")
+def _():
+    for f in ("webui/index.html", "webui/mobil.html"):
+        sz = Path(f).read_text(encoding="utf-8")
+        assert "rata_korlat" in sz, f
 
 
 @teszt("429 utan var es ujraprobal")
