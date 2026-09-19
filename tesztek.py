@@ -653,6 +653,127 @@ def _():
 
 # ───────────────────────────────────────────────────────── tarolas
 
+fejezet("Helyettesites")
+
+
+def _sajt_asszisztens():
+    """Kosar egy dragabb sajttal, es olcsobb alternativakkal."""
+    kosar = """Cart Summary:
+• Total items: 1
+• Total price: 476 HUF
+• Can order: No
+
+Products in cart:
+• Miil Szeletelt gouda (Miil)
+  Quantity: 2
+  Price: 952 HUF
+  Category: Sajt
+  Cart ID: 900001"""
+    a = uj_asszisztens(HamisMCP(kosar=kosar))
+    a.utolso_talalatok.extend([
+        # 3174 Ft/kg
+        {"id": 68938, "nev": "Miil Szeletelt gouda", "ar": 476,
+         "mennyiseg": 150, "egyseg": "g"},
+        # 2658 Ft/kg  -> 16% olcsobb
+        {"id": 90143, "nev": "Ammerlander tilsiter", "ar": 1329,
+         "mennyiseg": 500, "egyseg": "g"},
+        # 3092 Ft/kg  -> csak 3%, nem eleg
+        {"id": 77777, "nev": "Miil ementáli", "ar": 773,
+         "mennyiseg": 250, "egyseg": "g"},
+        # masik egyseg: nem osszehasonlithato
+        {"id": 88888, "nev": "Tej 1 l", "ar": 397,
+         "mennyiseg": 1, "egyseg": "l"},
+    ])
+    return a
+
+
+@teszt("javaslat: csak eleg nagy kulonbsegnel, azonos egysegben")
+def _():
+    a = _sajt_asszisztens()
+    r = a.helyettesitest_javasol()
+    assert len(r["javaslatok"]) == 1, r["javaslatok"]
+    j = r["javaslatok"][0]
+    assert j["ajanlott"]["nev"] == "Ammerlander tilsiter", j
+    assert 14 <= j["megtakaritas_szazalek"] <= 18, j
+    # a tej nem lehet sajt helyettesitoje
+    assert "Tej" not in json.dumps(r, ensure_ascii=False)
+
+
+@teszt("a javaslat SOHA nem hajtja vegre a cseret magatol")
+def _():
+    a = _sajt_asszisztens()
+    mcp = a.mcp
+    mcp.naplo.clear()
+    r = a.helyettesitest_javasol()
+    nevek = [h[0] for h in mcp.naplo]
+    assert "add_to_cart" not in nevek, nevek
+    assert "remove_from_cart" not in nevek, nevek
+    assert "CSAK JAVASLATOK" in r["megjegyzes"]
+
+
+@teszt("az elutasitott csere tobbe nem jon elo")
+def _():
+    a = _sajt_asszisztens()
+    assert a.helyettesitest_javasol()["javaslatok"], "elsore kellene javaslat"
+    a.helyettesitest_dontesz(68938, 90143, elfogadta=False)
+    r = a.helyettesitest_javasol()
+    assert not r["javaslatok"], "az elutasitott parost ujra ajanlotta"
+
+
+@teszt("elfogadas eseten elvegzi a cseret, a darabszam megmarad")
+def _():
+    a = _sajt_asszisztens()
+    mcp = a.mcp
+    mcp.naplo.clear()
+    r = a.helyettesitest_dontesz(68938, 90143, elfogadta=True)
+    # a kosarban 2 darab volt - annyinak kell bemennie
+    hozzaad = next(h for h in mcp.naplo if h[0] == "add_to_cart")
+    assert hozzaad[1]["products"][0]["quantity"] == 2, hozzaad
+    assert hozzaad[1]["products"][0]["product_id"] == 90143
+    lever = next(h for h in mcp.naplo if h[0] == "remove_from_cart")
+    assert lever[1]["order_field_id"] == "900001", lever
+
+
+@teszt("szaraz modban nem cserel")
+def _():
+    a = _sajt_asszisztens()
+    a.szaraz = True
+    mcp = a.mcp
+    mcp.naplo.clear()
+    r = a.helyettesitest_dontesz(68938, 90143, elfogadta=True)
+    assert r.get("szaraz_futas")
+    assert not any(h[0] == "add_to_cart" for h in mcp.naplo)
+
+
+@teszt("ismeretlen ID-nal nem talalgat")
+def _():
+    a = _sajt_asszisztens()
+    r = a.helyettesitest_dontesz(999, 888, elfogadta=True)
+    assert "hiba" in r
+    # ertelmetlen bemenet sem szall el
+    assert "hiba" in a.helyettesitest_dontesz("x", "y", elfogadta=True)
+
+
+@teszt("nincs jobb ajanlat: nem talal ki semmit")
+def _():
+    kosar = """Cart Summary:
+• Total items: 1
+• Total price: 397 HUF
+
+Products in cart:
+• Magyar Tej ESL (Magyar)
+  Quantity: 1
+  Price: 397 HUF
+  Cart ID: 900002"""
+    a = uj_asszisztens(HamisMCP(kosar=kosar))
+    a.utolso_talalatok.append(
+        {"id": 16321, "nev": "Magyar Tej ESL", "ar": 397,
+         "mennyiseg": 1, "egyseg": "l"})
+    r = a.helyettesitest_javasol()
+    assert r["javaslatok"] == []
+    assert "NE talalj ki" in r.get("megjegyzes", "")
+
+
 fejezet("Kep")
 
 

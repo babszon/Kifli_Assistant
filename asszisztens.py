@@ -221,6 +221,24 @@ FELTOLTOTT KEP
   kerdezd meg, maradt-e ki valami.
 - SOHA ne talalj ki tételt, ami nem szerepelt a kiolvasott listaban.
 
+HELYETTESITES - OLCSOBB ALTERNATIVAK
+- Ha a felhasznalo azt kerdezi, lehetne-e olcsobban, vagy ha a lezaras
+  elott sok minden van a kosarban, hivhatod a helyettesitest_javasol
+  eszkozt.
+- A javaslatokat EGYESEVEL mutasd be, roviden. Mondd meg a nevet es
+  azt, hany szazalekkal olcsobb. Peldaul: "A Miil gouda helyett az
+  Ammerlander tilsiter most 30 szazalekkal olcsobb kilonkent - erdekel?"
+- FONTOS: a ket termek NEM ugyanaz. Soha ne mondd, hogy "ugyanaz csak
+  olcsobb". Mondd meg mindket nevet, hogy a felhasznalo tudja, mit
+  cserelne.
+- A valasza utan MINDIG hivd a helyettesitest_dontesz eszkozt. Ha
+  elfogadta, az elvegzi a cseret is - neked nem kell kivenni es
+  betenni.
+- Egy beszelgetesben legfeljebb KET-HAROM cseret ajanlj fel. Tobb mar
+  zavaro, es a felhasznalo nem azert jott, hogy alkudozzon.
+- SOHA ne csereld le magatol, amit a felhasznalo kert. A csere mindig
+  az o dontese.
+
 SZALLITAS, ELOFIZETES, CIM
 - Ha a szallitas idejerol kerdez, hivd a szallitasi_idosavok eszkozt, es
   mondd meg a LEGKORABBI lehetoseget az araval. Legfeljebb ket-harom
@@ -339,6 +357,43 @@ ESZKOZOK = [
                 "tételhez megbizhatosagot is kapsz - ami bizonytalan, azt "
                 "NE tedd be csendben, hanem olvasd fel es kerdezz ra."),
             "parameters": {"type": "object", "properties": {}},
+        },
+        {
+            "name": "helyettesitest_javasol",
+            "description": (
+                "Megnezi, van-e a kosarban olyan termek, amire most van "
+                "olcsobb vagy akcios alternativa. Akkor hivd, ha a "
+                "felhasznalo azt kerdezi, lehet-e olcsobban, vagy a "
+                "lezaras elott egyszer, ha sok minden van a kosarban. "
+                "Amit korabban elutasitott, azt nem ajanlja ujra."),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "termek": {
+                        "type": "string",
+                        "description": ("egy konkret termek neve, ha csak "
+                                        "arra vagy kivancsi; kihagyhato")},
+                },
+            },
+        },
+        {
+            "name": "helyettesitest_dontesz",
+            "description": (
+                "Rogziti, hogy a felhasznalo elfogadta vagy elutasitotta "
+                "egy helyettesitesi javaslatot. MINDIG hivd, miutan "
+                "valaszolt - igy legkozelebb nem kerdezed ujra ugyanazt. "
+                "Elfogadas eseten a csere is megtortenik."),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "eredeti_id": {"type": "integer",
+                                   "description": "a kosarban levo termek"},
+                    "alternativ_id": {"type": "integer",
+                                      "description": "a javasolt termek"},
+                    "elfogadta": {"type": "boolean"},
+                },
+                "required": ["eredeti_id", "alternativ_id", "elfogadta"],
+            },
         },
         {
             "name": "kosar_megmutat",
@@ -803,6 +858,183 @@ class Asszisztens:
                 "csak a valasza utan tedd be. Ha kezirasos a lista, "
                 "erdemes a vegen osszefoglalni, mit olvastal ki."),
         }
+
+    def helyettesitest_javasol(self, termek=None):
+        """
+        Olcsobb vagy akcios alternativak keresese a kosarban levokre.
+
+        Csak javasol - a csere SOHA nem tortenik meg magatol. Amit a
+        felhasznalo korabban elutasitott, azt nem ajanljuk ujra.
+        """
+        try:
+            nyers = self.mcp.hiv("get_cart_content")
+        except MCPHiba as e:
+            return {"hiba": str(e)}
+
+        tetelek = self._kosar_ertelmez(nyers)["tetelek"]
+        if not tetelek:
+            return {"javaslatok": [], "uzenet": "A kosar ures."}
+
+        if termek:
+            mit = termek.lower().strip()
+            tetelek = [t for t in tetelek if mit in t["nev"].lower()]
+            if not tetelek:
+                return {"hiba": f"Nem talaltam a kosarban: {termek}"}
+
+        akciok = self._akciok()
+        javaslatok = []
+
+        for tetel in tetelek[:8]:      # nem futtatjuk vegig 30 tételen
+            eredeti = next((t for t in self.utolso_talalatok
+                            if t["nev"].lower() == tetel["nev"].lower()),
+                           None)
+            if eredeti is None:
+                continue
+            eredeti_egysegar, egyseg = arak.egysegar(eredeti)
+            if not eredeti_egysegar:
+                continue
+
+            jelolt = self._legjobb_alternativa(
+                eredeti, eredeti_egysegar, egyseg, akciok)
+            if jelolt:
+                javaslatok.append(jelolt)
+
+        if not javaslatok:
+            return {"javaslatok": [],
+                    "uzenet": "Nem talaltam jobb alternativat a kosarban "
+                              "levokre.",
+                    "megjegyzes": ("Mondd meg roviden, hogy most nincs jobb "
+                                   "ajanlat. NE talalj ki alternativat.")}
+
+        print(f"\n{SZ}  {len(javaslatok)} lehetseges csere:{ALAP}")
+        for j in javaslatok:
+            print(f"  {HA}{j['eredeti']['nev'][:34]:36}"
+                  f" -> {j['ajanlott']['nev'][:34]}{ALAP}")
+            print(f"  {HA}{'':36}    {j['megtakaritas_szazalek']}% olcsobb "
+                  f"kilonkent{ALAP}")
+
+        return {
+            "javaslatok": javaslatok,
+            "megjegyzes": (
+                "Ezek CSAK JAVASLATOK - egyik sem tortent meg. Mutasd be "
+                "oket EGYESEVEL, roviden, es mondd meg, mennyivel olcsobb. "
+                "Fontos: a ket termek NEM ugyanaz, ezert mondd meg a "
+                "nevet is. A valasz utan MINDIG hivd a "
+                "helyettesitest_dontesz eszkozt - elfogadas eseten az "
+                "vegzi el a cseret is."),
+        }
+
+    def _legjobb_alternativa(self, eredeti, eredeti_egysegar, egyseg, akciok):
+        """
+        A legjobb csere-jelolt egy kosarban levo termekre.
+
+        Ket feltetel: legalabb 15%-kal olcsobb egysegaron, es a
+        felhasznalo korabban nem utasitotta el ezt a parost.
+        """
+        legjobb = None
+        for jelolt in self.utolso_talalatok:
+            if jelolt["id"] == eredeti["id"]:
+                continue
+            if self.tarolo.helyettesites_dontes(
+                    eredeti["id"], jelolt["id"]) == "elutasitva":
+                continue
+
+            j_egysegar, j_egyseg = arak.egysegar(jelolt)
+            if not j_egysegar or j_egyseg != egyseg:
+                continue      # kilot nem hasonlitunk literhez
+            if j_egysegar >= eredeti_egysegar * 0.85:
+                continue      # nem eleg nagy a kulonbseg
+
+            akcios = akciok.get(jelolt["id"])
+            pontszam = eredeti_egysegar / j_egysegar
+            if akcios:
+                pontszam *= 1.2      # az akcios jelolt elonyt kap
+            if legjobb is None or pontszam > legjobb["_pontszam"]:
+                legjobb = {
+                    "_pontszam": pontszam,
+                    "eredeti": {"id": eredeti["id"], "nev": eredeti["nev"],
+                                "egysegar": arak.egysegar_szoveg(eredeti)},
+                    "ajanlott": {
+                        "id": jelolt["id"], "nev": jelolt["nev"],
+                        "ar": jelolt.get("ar"),
+                        "egysegar": arak.egysegar_szoveg(jelolt),
+                        "kedvezmeny": jelolt.get("kedvezmeny")},
+                    "megtakaritas_szazalek": round(
+                        (1 - j_egysegar / eredeti_egysegar) * 100),
+                    "akcios": bool(akcios),
+                }
+
+        if legjobb:
+            legjobb.pop("_pontszam", None)
+        return legjobb
+
+    def helyettesitest_dontesz(self, eredeti_id, alternativ_id, elfogadta):
+        """
+        A dontes rogzitese, es elfogadas eseten a csere elvegzese.
+
+        Az elutasitas VEGLEGES: ezt a parost tobbe nem ajanljuk. Az
+        elfogadas viszont csak erre az alkalomra szol - legkozelebb
+        ujra megkerdezzuk, mert lehet, hogy most csak azert fogadtad
+        el, mert epp elfogyott a szokasos.
+        """
+        try:
+            eredeti_id = int(eredeti_id)
+            alternativ_id = int(alternativ_id)
+        except (TypeError, ValueError):
+            return {"hiba": "Az azonositok nem szamok."}
+
+        dontes = "elfogadva" if elfogadta else "elutasitva"
+        self.tarolo.helyettesites_ment(eredeti_id, alternativ_id, dontes)
+
+        if not elfogadta:
+            print(f"  {HA}~ elutasitott csere megjegyezve{ALAP}")
+            return {"megjegyeztem": "elutasitva",
+                    "uzenet": "Rendben, ezt tobbe nem ajanlom."}
+
+        eredeti = next((t for t in self.utolso_talalatok
+                        if t["id"] == eredeti_id), None)
+        uj = next((t for t in self.utolso_talalatok
+                   if t["id"] == alternativ_id), None)
+        if eredeti is None or uj is None:
+            return {"hiba": "Az egyik termek nincs a legutobbi talalatok "
+                            "kozott, ezert nem tudom elvegezni a cseret."}
+
+        if self.szaraz:
+            print(f"  {HA}[szaraz] csere: {eredeti['nev']} -> "
+                  f"{uj['nev']}{ALAP}")
+            return {"szaraz_futas": True, "csere": uj["nev"]}
+
+        # A regi darabszamot atvesszuk
+        try:
+            nyers = self.mcp.hiv("get_cart_content")
+        except MCPHiba as e:
+            return {"hiba": str(e)}
+        kosarban = next(
+            (t for t in self._kosar_ertelmez(nyers)["tetelek"]
+             if t["nev"].lower() == eredeti["nev"].lower()), None)
+        if kosarban is None:
+            return {"hiba": f"A(z) '{eredeti['nev']}' mar nincs a kosarban."}
+
+        darab = kosarban.get("darab") or 1
+        try:
+            self.mcp.hiv("remove_from_cart",
+                         {"order_field_id": str(kosarban["cart_item_id"])})
+            self.mcp.hiv("add_to_cart", {"products": [
+                {"product_id": alternativ_id, "quantity": darab}]})
+        except MCPHiba as e:
+            return {"hiba": f"A csere nem sikerult: {e}"}
+
+        bent, kosar_ar = self._kosarban_van(alternativ_id, uj["nev"])
+        if not bent:
+            return {"hiba": f"A csere utan a(z) '{uj['nev']}' NEM kerult a "
+                            f"kosarba. Nezd meg a kosarat."}
+
+        self.tarolo.naploz(eredeti["nev"], "helyettesites", uj["nev"])
+        print(f"  {Z}~ {eredeti['nev']} -> {uj['nev']}{ALAP}")
+        return {"lecsereltem": {"regi": eredeti["nev"], "uj": uj["nev"],
+                                "darab": darab, "ar": kosar_ar},
+                "adatok": f"{uj['nev']}, {darab} darab"
+                          + (f", {kosar_ar:.0f} forint." if kosar_ar else ".")}
 
     def kosar_megmutat(self):
         """A VALODI Kifli kosar tartalma, nem a memoria."""

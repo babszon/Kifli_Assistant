@@ -13,7 +13,7 @@ Magyarul, úgy ahogy tényleg beszélsz — „harminc deka trappistát”,
 ![Python](https://img.shields.io/badge/Python-3.9+-132B52?style=flat-square&labelColor=0F2342)
 ![OpenAI Realtime](https://img.shields.io/badge/OpenAI-Realtime-132B52?style=flat-square&labelColor=0F2342)
 ![Magyar](https://img.shields.io/badge/nyelv-magyar-C8322B?style=flat-square&labelColor=0F2342)
-![Tesztek](https://img.shields.io/badge/tesztek-64-7FB069?style=flat-square&labelColor=0F2342)
+![Tesztek](https://img.shields.io/badge/tesztek-71-7FB069?style=flat-square&labelColor=0F2342)
 ![Licenc](https://img.shields.io/badge/licenc-MIT-7FB069?style=flat-square&labelColor=0F2342)
 
 </div>
@@ -96,6 +96,16 @@ szűz. A hústartalom, a szabadtartás és a teljes kiőrlés mind számít
 neki.
 
 </td>
+<td valign="top">
+
+**Olcsóbb alternatívát ajánl**
+
+Ha a kosárban lévő termékre van kedvezőbb, szól — de soha nem cseréli le
+magától. Amit egyszer elutasítasz, többé nem kérdezi.
+
+</td>
+</tr>
+<tr>
 <td valign="top">
 
 **Ismeri az akciós szekciókat**
@@ -263,10 +273,10 @@ amit a Zoom és a Meet használ.
   felület   ◄── esemény ── Kifli.hu · tanulás · egységár
 ```
 
-Az asszisztens **tizennyolc eszközt** kap: keresés, kosárkezelés,
-mennyiség-módosítás, feltöltött lista, akciók és akciós szekciók,
-korábbi rendelések, étkezés-javaslatok, szállítási idősávok, előfizetés
-és cím.
+Az asszisztens **húsz eszközt** kap: keresés, kosárkezelés,
+mennyiség-módosítás, feltöltött lista, helyettesítés-javaslatok, akciók
+és akciós szekciók, korábbi rendelések, étkezés-javaslatok, szállítási
+idősávok, előfizetés és cím.
 
 De a **mennyiségszámítás, az egységár és a visszaigazoló mondatok a
 programban készülnek**, nem a modellben. Ez a projekt legfontosabb
@@ -298,7 +308,7 @@ Az API kulcs a Python oldalon marad, nem kerül ki a böngészőbe.
 | `llm.py` | a magyar szöveg normalizálása |
 | `szinkron.py` | listából kosár, beszélgetés nélkül |
 | `api.py` | telefonos gyorsfelvétel (Siri) |
-| `tesztek.py` | 64 funkcionális teszt, hálózat nélkül |
+| `tesztek.py` | 71 funkcionális teszt, hálózat nélkül |
 | `ellenorzes.py` | statikus ellenőrzés |
 | `Dockerfile` | szerveres futtatás (NAS, VPS) |
 
@@ -375,7 +385,7 @@ szinkronizálásnál történik, egyszer.
 ## Fejlesztés
 
 ```bash
-python3 tesztek.py       # 64 funkcionális teszt, hálózat nélkül
+python3 tesztek.py       # 71 funkcionális teszt, hálózat nélkül
 python3 ellenorzes.py    # statikus ellenőrzés
 ```
 
@@ -394,6 +404,7 @@ Amit külön ellenőriznek, mert ezekben **csendben lehet hibázni**:
 - nem állítja, hogy lefoglalt egy idősávot, amit nem tud lefoglalni
 - üres találatnál nem talál ki terméket
 - egy várakozó hívás nem blokkolja a beszélgetést
+- a helyettesítés soha nem cserél magától, és az elutasítás végleges
 
 ## Közreműködés
 
