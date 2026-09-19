@@ -652,6 +652,98 @@ def _():
 
 # ───────────────────────────────────────────────────────── tarolas
 
+fejezet("Kep")
+
+
+@teszt("kepformatum felismerese")
+def _():
+    import kep
+    esetek = [(b"\xff\xd8\xff\xe0" + b"\x00" * 20, "image/jpeg"),
+              (b"\x89PNG\r\n\x1a\n" + b"\x00" * 20, "image/png"),
+              (b"RIFF\x00\x00\x00\x00WEBP" + b"\x00" * 10, "image/webp"),
+              (b"GIF89a" + b"\x00" * 20, "image/gif"),
+              (b"nem kep" + b"\x00" * 20, None)]
+    for adat, vart in esetek:
+        assert kep._kep_tipus(adat) == vart, adat[:8]
+
+
+@teszt("hibas kep ertheto uzenetet ad")
+def _():
+    import kep
+    for adat, jel in ((b"", "res"), (b"nem kep" * 5, "format"),
+                      (b"\xff\xd8\xff" + b"\x00" * (21 * 1024 * 1024), "nagy")):
+        try:
+            kep.listat_kiolvas(adat)
+            raise AssertionError(f"{jel}: atment")
+        except kep.KepHiba as e:
+            assert jel.lower() in str(e).lower(), f"{jel}: {e}"
+
+
+@teszt("a felismeres valaszat rendesen dolgozza fel")
+def _():
+    import kep
+
+    def v(tartalom):
+        return {"choices": [{"message": {"content": tartalom}}]}
+
+    r = kep._feldolgoz(v(json.dumps({
+        "tetelek": [
+            {"szoveg": "2 l tej", "megbizhatosag": 0.95},
+            {"szoveg": "trap. 30 dkg", "megbizhatosag": 0.6,
+             "bizonytalan_resz": "30 vagy 50"},
+            {"szoveg": "  ", "megbizhatosag": 0.9}],
+        "iras_tipusa": "keziras"})))
+    assert len(r["tetelek"]) == 2, "az ures tétel bent maradt"
+    assert r["iras_tipusa"] == "keziras"
+
+    # markdown kodblokk, szoveges tétel, ertelmetlen megbizhatosag
+    assert kep._feldolgoz(v('```json\n{"tetelek":[{"szoveg":"tej"}]}\n```')
+                          )["tetelek"][0]["megbizhatosag"] == 0.5
+    assert len(kep._feldolgoz(v('{"tetelek":["a","b"]}'))["tetelek"]) == 2
+    r = kep._feldolgoz(v('{"tetelek":[{"szoveg":"x","megbizhatosag":"sok"},'
+                         '{"szoveg":"y","megbizhatosag":5}]}'))
+    assert [t["megbizhatosag"] for t in r["tetelek"]] == [0.5, 1.0]
+
+
+@teszt("a bizonytalan tételeket kulon adja at a modellnek")
+def _():
+    a = uj_asszisztens()
+    a.kep_tetelek = {"tetelek": [
+        {"szoveg": "2 l tej", "megbizhatosag": 0.95,
+         "bizonytalan_resz": None},
+        {"szoveg": "trap. 30 dkg", "megbizhatosag": 0.55,
+         "bizonytalan_resz": "30 vagy 50"}],
+        "iras_tipusa": "keziras"}
+
+    r = a.feltoltott_lista()
+    assert r["biztosan_olvashato"] == ["2 l tej"], r
+    assert len(r["bizonytalan"]) == 1
+    assert r["bizonytalan"][0]["mi_nem_egyertelmu"] == "30 vagy 50"
+    assert "OLVASD FEL" in r["megjegyzes"]
+    # csak egyszer hasznalhato fel
+    assert a.feltoltott_lista()["tetelek"] == []
+
+
+@teszt("kep nelkul nem talal ki listat")
+def _():
+    a = uj_asszisztens()
+    r = a.feltoltott_lista()
+    assert r["tetelek"] == []
+    assert "uzenet" in r
+
+
+@teszt("mindket felulet tud kepet kuldeni")
+def _():
+    for f in ("webui/index.html", "webui/mobil.html"):
+        sz = Path(f).read_text(encoding="utf-8")
+        assert "kepetKuld" in sz, f
+        assert "kep_allapot" in sz, f
+        assert 'accept="image/*"' in sz, f
+    # a mobilon a kamera is elerheto legyen
+    mobil = Path("webui/mobil.html").read_text(encoding="utf-8")
+    assert 'capture="environment"' in mobil, "nincs kozvetlen fotozas"
+
+
 fejezet("Tanulas")
 
 

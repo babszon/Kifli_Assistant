@@ -200,6 +200,19 @@ DONTESI ELVEK
 - Mielott nagyobb rendelest zarnal le, erdemes a beutemezett_rendelesek
   eszkozzel ellenorizni, hogy nincs-e mar folyamatban rendeles.
 
+FELTOLTOTT KEP
+- Ha a felhasznalo kepet tolt fel a listajarol, hivd a feltoltott_lista
+  eszkozt. A kep lehet kezzel irt cetli vagy kepernyokep.
+- A 'biztosan_olvashato' tételekkel ugy jarj el, mintha diktalta volna
+  oket: keress ra, es tedd be a szokasos modon.
+- A 'bizonytalan' tételeket OLVASD FEL, es kerdezd meg, jol olvastad-e.
+  Peldaul: "Van itt egy sor, amit nem tudok biztosan kiolvasni -
+  harminc deka trappista lehet, vagy otven?" Ezeket csak a valasza utan
+  tedd be.
+- Ha kezirasos volt a lista, a vegen foglald ossze, mit olvastal ki, es
+  kerdezd meg, maradt-e ki valami.
+- SOHA ne talalj ki tételt, ami nem szerepelt a kiolvasott listaban.
+
 SZALLITAS, ELOFIZETES, CIM
 - Ha a szallitas idejerol kerdez, hivd a szallitasi_idosavok eszkozt, es
   mondd meg a LEGKORABBI lehetoseget az araval. Legfeljebb ket-harom
@@ -307,6 +320,17 @@ ESZKOZOK = [
                 },
                 "required": ["termek", "darab"],
             },
+        },
+        {
+            "name": "feltoltott_lista",
+            "description": (
+                "A felhasznalo altal feltoltott KEPROL kiolvasott "
+                "bevasarlolista. Akkor hivd, ha a felhasznalo azt mondja, "
+                "hogy kepet toltott fel, fotot csinalt a listarol, vagy "
+                "ha ertesitest kapsz arrol, hogy kep erkezett. Minden "
+                "tételhez megbizhatosagot is kapsz - ami bizonytalan, azt "
+                "NE tedd be csendben, hanem olvasd fel es kerdezz ra."),
+            "parameters": {"type": "object", "properties": {}},
         },
         {
             "name": "kosar_megmutat",
@@ -481,6 +505,7 @@ class Asszisztens:
         self.utolso_talalatok = []
         self.arak_szerint = {}        # kifli_id -> ar, a vegosszeghez
         self._akcio_gyorstar = None
+        self.kep_tetelek = None        # a feltoltott keprol kiolvasva
         self.lezarva = False
 
     # ------------------------------------------------------------- eszkozok
@@ -734,6 +759,42 @@ class Asszisztens:
                 "ar": kosar_ar,
                 "adatok": f"{tetel['nev']}, most {uj_darab} darab"
                           + (f", {kosar_ar:.0f} forint." if kosar_ar else ".")}
+
+    def feltoltott_lista(self):
+        """
+        A legutobb feltoltott keprol kiolvasott tételek.
+
+        A kepet a gui.py dolgozza fel, amint megerkezik - ez az eszkoz
+        csak atadja az eredmenyt a modellnek. Igy a felismeres mar kesz
+        van, mire a beszelgetes odaer.
+        """
+        if not self.kep_tetelek:
+            return {"tetelek": [],
+                    "uzenet": "Nem erkezett kep, vagy mar feldolgoztuk.",
+                    "megjegyzes": ("Kerd meg a felhasznalot, hogy toltse "
+                                   "fel a kepet a kapocs ikonnal.")}
+
+        adatok = self.kep_tetelek
+        self.kep_tetelek = None        # egyszer hasznaljuk fel
+
+        biztos = [t for t in adatok["tetelek"] if t["megbizhatosag"] >= 0.8]
+        kerdeses = [t for t in adatok["tetelek"] if t["megbizhatosag"] < 0.8]
+
+        return {
+            "tetelek": adatok["tetelek"],
+            "biztosan_olvashato": [t["szoveg"] for t in biztos],
+            "bizonytalan": [
+                {"szoveg": t["szoveg"],
+                 "mi_nem_egyertelmu": t.get("bizonytalan_resz")}
+                for t in kerdeses],
+            "iras_tipusa": adatok.get("iras_tipusa"),
+            "megjegyzes": (
+                "A 'biztosan_olvashato' tételeket keresd meg es tedd be a "
+                "szokasos modon. A 'bizonytalan' tételeket OLVASD FEL a "
+                "felhasznalonak, es kerdezd meg, jol olvastad-e - ezeket "
+                "csak a valasza utan tedd be. Ha kezirasos a lista, "
+                "erdemes a vegen osszefoglalni, mit olvastal ki."),
+        }
 
     def kosar_megmutat(self):
         """A VALODI Kifli kosar tartalma, nem a memoria."""

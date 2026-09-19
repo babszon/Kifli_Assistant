@@ -22,6 +22,8 @@ Magyarul, úgy ahogy tényleg beszélsz — „harminc deka trappistát”,
 > **Te:** Elfogyott itthon a ketchup, kellene 20 tojás meg 4 liter kóla.
 > Mosogatógép tabletta is kell, márkás legyen.
 >
+> *(vagy egyszerűen lefotózod a cetlit)*
+>
 > **AI:** Bement a Heinz ketchup, 570 gramm, 2249 forintért. A tojásból
 > két doboz Farm Prémium, összesen 1678 forint. A kóla most akciós, a
 > három és feles multipack 999 forint. A tablettából a Finish Power
@@ -86,10 +88,11 @@ neki.
 <tr>
 <td valign="top">
 
-**Figyeli az akciókat**
+**Lefotózod a cetlit**
 
-Szól, ha a szokásos terméked épp kedvezményes — arra is, amire nem
-gondoltál volna.
+Kézzel írt lista vagy képernyőkép — kiolvassa, és összerakja belőle a
+kosarat. Amit nem tud biztosan elolvasni, azt felolvassa és rákérdez,
+nem teszi be csendben.
 
 </td>
 <td valign="top">
@@ -240,7 +243,7 @@ lehet vágni anélkül, hogy az asszisztens visszahallaná magát.
   felület   ◄── esemény ── Kifli.hu · tanulás · egységár
 ```
 
-Az asszisztens **tizenhat eszközt** kap: keresés, kosárkezelés,
+Az asszisztens **tizennyolc eszközt** kap: keresés, kosárkezelés,
 mennyiség-módosítás, akciók, korábbi rendelések, szállítási idősávok,
 előfizetés és szállítási cím. A nyelvi modell dönti
 el, mit mikor hív.
@@ -272,6 +275,7 @@ Az API kulcs a Python oldalon marad, nem kerül ki a böngészőbe.
 | `arak.py` | egységár-számítás |
 | `adat.py` | tanulás (SQLite) és Home Assistant |
 | `llm.py` | a magyar szöveg normalizálása |
+| `kep.py` | bevásárlólista kiolvasása fotóról |
 | `szinkron.py` | listából kosár, beszélgetés nélkül |
 | `Dockerfile` | szerveres futtatás (NAS, VPS) |
 | `tesztek.py` | funkcionális tesztek, hálózat nélkül |

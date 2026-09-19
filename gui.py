@@ -172,11 +172,65 @@ class Hid:
                 }))
                 await self.valaszt_ker()
 
+            elif tipus == "kep":
+                await self._kep_feldolgoz(parancs)
+
             elif tipus == "kosar_frissit":
                 eredmeny = await asyncio.to_thread(
                     self.asszisztens.hivas, "kosar_megmutat", {})
                 await self.kuld_ui("tool_done", name="kosar_megmutat",
                                    result=eredmeny)
+
+    async def _kep_feldolgoz(self, parancs):
+        """
+        A bongeszobol erkezo kep feldolgozasa.
+
+        A felismeres lassu (par masodperc), ezert kulon szalon fut, es
+        kozben jelzunk a feluletnek. Amikor kesz, ertesitjuk a modellt,
+        hogy kerje le a feltoltott_lista eszkozzel.
+        """
+        import kep as kep_modul
+
+        await self.kuld_ui("kep_allapot", allapot="olvasom")
+        try:
+            nyers = base64.b64decode(parancs.get("adat", ""))
+        except Exception:
+            await self.kuld_ui("kep_allapot", allapot="hiba",
+                               text="A kepet nem sikerult beolvasni.")
+            return
+
+        try:
+            eredmeny = await asyncio.to_thread(
+                kep_modul.listat_kiolvas, nyers)
+        except kep_modul.KepHiba as e:
+            await self.kuld_ui("kep_allapot", allapot="hiba", text=str(e))
+            return
+        except Exception as e:
+            await self.kuld_ui("kep_allapot", allapot="hiba",
+                               text=f"Varatlan hiba: {e}")
+            return
+
+        self.asszisztens.kep_tetelek = eredmeny
+        await self.kuld_ui("kep_allapot", allapot="kesz",
+                           tetelek=eredmeny["tetelek"],
+                           iras=eredmeny.get("iras_tipusa"))
+
+        darab = len(eredmeny["tetelek"])
+        if not darab:
+            uzenet = ("A felhasznalo feltoltott egy kepet, de nem talaltam "
+                      "rajta bevasarlolistat. "
+                      + (eredmeny.get("uzenet") or ""))
+        else:
+            uzenet = (f"A felhasznalo feltoltott egy kepet a "
+                      f"bevasarlolistajarol, {darab} tétellel. Hivd a "
+                      f"feltoltott_lista eszkozt, es dolgozd fel.")
+
+        await self.nyitott.send(json.dumps({
+            "type": "conversation.item.create",
+            "item": {"type": "message", "role": "user",
+                     "content": [{"type": "input_text", "text": uzenet}]},
+        }))
+        await self.valaszt_ker()
 
     async def fut(self):
         import websockets

@@ -121,6 +121,19 @@ button:focus-visible,[tabindex]:focus-visible{
 .mikro svg{width:22px;height:22px}
 .mikro[data-be="1"]{background:var(--pipacs)}
 .mikro[data-be="1"].hangos{box-shadow:0 0 0 var(--gyuru,0) rgba(200,50,43,.28)}
+.kapocs{
+  width:46px;height:46px;flex:none;border-radius:50%;
+  background:var(--felulet);display:grid;place-items:center;cursor:pointer;
+  transition:background .2s;
+}
+.kapocs:hover{background:var(--felulet-2)}
+.kapocs svg{width:21px;height:21px}
+body.ejtes::after{
+  content:'Engedd el a képet';position:fixed;inset:14px;z-index:30;
+  border:2px dashed var(--arany);border-radius:14px;
+  display:grid;place-items:center;font-size:19px;color:var(--arany);
+  background:rgba(19,43,82,.9);pointer-events:none;
+}
 .gepeles{
   flex:1;background:var(--felulet);border:1px solid transparent;
   border-radius:27px;padding:15px 20px;color:var(--krem);
@@ -238,6 +251,14 @@ button:focus-visible,[tabindex]:focus-visible{
                   stroke="#F6F3E9" stroke-width="1.7" stroke-linecap="round"/>
           </svg>
         </button>
+        <label class="kapocs" title="Kép a listáról">
+          <input type="file" id="kepfajl" accept="image/*" hidden>
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M21 11.5 12.5 20a5 5 0 0 1-7-7l8-8a3.5 3.5 0 0 1 5 5l-8 8a2 2 0 0 1-3-3l7.5-7.5"
+                  stroke="#F6F3E9" stroke-width="1.6" stroke-linecap="round"
+                  stroke-linejoin="round"/>
+          </svg>
+        </label>
         <input class="gepeles" id="gepeles" autocomplete="off"
                placeholder="vagy írd be, mire van szükséged">
       </div>
@@ -495,6 +516,7 @@ async function kapcsolodik(){
       if (u.name === 'termek_keres') rendszer('keresés: ' + (u.args.termek||''));
     }
     else if (u.type === 'tool_done') eszkozEredmeny(u.name, u.result);
+    else if (u.type === 'kep_allapot') kepAllapot(u);
     else if (u.type === 'hiba') rendszer(u.text, true);
   };
 
@@ -548,6 +570,58 @@ $('#mikro').onclick = async () => {
     catch(e){ $('#sugo').textContent = 'A mikrofon nem érhető el.'; }
   }
 };
+
+
+/* ── kép feltöltés ────────────────────────────────────── */
+const KEP_MAX = 18 * 1024 * 1024;
+
+async function kepetKuld(fajl){
+  if (!fajl) return;
+  if (!ws || ws.readyState !== 1)
+    return rendszer('Nincs kapcsolat a szerverrel.', true);
+  if (fajl.size > KEP_MAX)
+    return rendszer('A kép túl nagy (max 18 MB).', true);
+
+  rendszer('kép feltöltve — olvasom…');
+  const puffer = await fajl.arrayBuffer();
+  // base64 darabokban, hogy nagy képnél se akadjon meg a böngésző
+  const bajtok = new Uint8Array(puffer);
+  let nyers = '';
+  for (let i = 0; i < bajtok.length; i += 8192)
+    nyers += String.fromCharCode(...bajtok.subarray(i, i + 8192));
+  ws.send(JSON.stringify({type:'kep', adat: btoa(nyers)}));
+}
+
+function kepAllapot(u){
+  if (u.allapot === 'hiba') return rendszer('A kép: ' + u.text, true);
+  if (u.allapot !== 'kesz') return;
+  const t = u.tetelek || [];
+  if (!t.length) return rendszer('Nem találtam listát a képen.');
+  const bizonytalan = t.filter(x => x.megbizhatosag < 0.8).length;
+  rendszer(`${t.length} tételt olvastam ki`
+           + (u.iras === 'keziras' ? ' (kézírás)' : '')
+           + (bizonytalan ? ` — ${bizonytalan} bizonytalan` : ''));
+}
+
+$('#kepfajl').onchange = e => { kepetKuld(e.target.files[0]);
+                                e.target.value = ''; };
+
+['dragenter','dragover'].forEach(n => document.addEventListener(n, e => {
+  e.preventDefault(); document.body.classList.add('ejtes'); }));
+['dragleave','drop'].forEach(n => document.addEventListener(n, e => {
+  e.preventDefault();
+  if (n === 'dragleave' && e.relatedTarget) return;
+  document.body.classList.remove('ejtes'); }));
+document.addEventListener('drop', e => {
+  const f = [...(e.dataTransfer?.files || [])]
+              .find(x => x.type.startsWith('image/'));
+  if (f) kepetKuld(f);
+});
+document.addEventListener('paste', e => {
+  const f = [...(e.clipboardData?.files || [])]
+              .find(x => x.type.startsWith('image/'));
+  if (f) kepetKuld(f);
+});
 
 $('#gepeles').onkeydown = e => {
   if (e.key !== 'Enter') return;

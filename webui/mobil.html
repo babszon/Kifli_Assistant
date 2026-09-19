@@ -110,6 +110,11 @@ body{
        border:none;transition:background .2s}
 .mikro svg{width:24px;height:24px}
 .mikro[data-be="1"]{background:var(--pipacs)}
+.kapocs{
+  width:50px;height:50px;flex:none;border-radius:50%;
+  background:var(--felulet);display:grid;place-items:center;
+}
+.kapocs svg{width:23px;height:23px}
 .sugo{flex:1;font-size:14px;color:var(--halvany)}
 .kesz-gomb{padding:11px 18px;background:var(--krem);color:var(--kobalt);
            border:none;border-radius:8px;font:inherit;font-size:15px;
@@ -162,6 +167,15 @@ body{
               stroke-width="1.7" stroke-linecap="round"/>
       </svg>
     </button>
+    <label class="kapocs" aria-label="Kép a listáról">
+      <input type="file" id="kepfajl" accept="image/*" capture="environment"
+             hidden>
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M3 8.5h3l1.5-2h9L18 8.5h3v11H3z" stroke="#F6F3E9"
+              stroke-width="1.6" stroke-linejoin="round"/>
+        <circle cx="12" cy="13.5" r="3.2" stroke="#F6F3E9" stroke-width="1.6"/>
+      </svg>
+    </label>
     <span class="sugo" id="sugo">Beszélj</span>
     <button class="kesz-gomb" id="kesz">Kész</button>
   </div>
@@ -359,6 +373,7 @@ async function kapcsolodik(){
         ws.send(JSON.stringify({type:'kosar_frissit'}));
       if (e2 && e2.hiba) rendszer(e2.hiba, true);
     }
+    else if (u.type === 'kep_allapot') kepAllapot(u);
     else if (u.type === 'hiba') rendszer(u.text, true);
   };
   ws.onclose = () => { allapot('varakozik');
@@ -394,6 +409,39 @@ $('#kapu').addEventListener('touchend', e => { e.preventDefault(); inditas(); })
 
 $('#mikro').onclick = () =>
   $('#mikro').dataset.be === '1' ? mikrofonAllj() : mikrofonIndit();
+
+
+/* ── kép: fotó vagy galéria ───────────────────────────── */
+const KEP_MAX = 18 * 1024 * 1024;
+
+async function kepetKuld(fajl){
+  if (!fajl) return;
+  if (!ws || ws.readyState !== 1)
+    return rendszer('Nincs kapcsolat.', true);
+  if (fajl.size > KEP_MAX)
+    return rendszer('A kép túl nagy (max 18 MB).', true);
+
+  rendszer('kép feltöltve — olvasom…');
+  const bajtok = new Uint8Array(await fajl.arrayBuffer());
+  let nyers = '';
+  for (let i = 0; i < bajtok.length; i += 8192)
+    nyers += String.fromCharCode(...bajtok.subarray(i, i + 8192));
+  ws.send(JSON.stringify({type:'kep', adat: btoa(nyers)}));
+}
+
+function kepAllapot(u){
+  if (u.allapot === 'hiba') return rendszer('A kép: ' + u.text, true);
+  if (u.allapot !== 'kesz') return;
+  const t = u.tetelek || [];
+  if (!t.length) return rendszer('Nem találtam listát a képen.');
+  const biz = t.filter(x => x.megbizhatosag < 0.8).length;
+  rendszer(`${t.length} tételt olvastam ki`
+           + (u.iras === 'keziras' ? ' (kézírás)' : '')
+           + (biz ? ` — ${biz} bizonytalan` : ''));
+}
+
+$('#kepfajl').onchange = e => { kepetKuld(e.target.files[0]);
+                                e.target.value = ''; };
 
 $('#kesz').onclick = () => {
   if (ws && ws.readyState === 1)
