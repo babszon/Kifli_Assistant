@@ -460,6 +460,26 @@ def _():
     assert t.keres("tej")["hit_count"] == 3
 
 
+@teszt("irasvedett adatbazisnal ertheto hibat ad")
+def _():
+    import sqlite3
+    import adat
+    t = adat.Tarolo(":memory:")
+
+    class Irasvedett:
+        def execute(self, *a, **k):
+            raise sqlite3.OperationalError(
+                "attempt to write a readonly database")
+        def commit(self): pass
+
+    t.db = Irasvedett()
+    try:
+        t._irhato_e()
+        raise AssertionError("nem jelzett irasvedettseget")
+    except adat.TaroloHiba as e:
+        assert "chown" in str(e), "nincs benne a javitas modja"
+
+
 @teszt("torles")
 def _():
     import adat

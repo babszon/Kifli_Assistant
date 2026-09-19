@@ -9,6 +9,11 @@ services:
       - "8420:8420"     # a felület
       - "8421:8421"     # a hangkapcsolat
 
+    # A konténer a SAJÁT felhasználódként fusson, különben nem tud írni
+    # az adat/ mappába. Az azonosítódat így kapod meg:  id -u  és  id -g
+    # Synologyn tipikusan 1026:100. A .env-ből is jöhet: KIFLI_UID / GID
+    user: "${KIFLI_UID:-1026}:${KIFLI_GID:-100}"
+
     volumes:
       # A beállítások és a megtanult termékek a NAS-on maradnak,
       # így a konténer bármikor újraépíthető.

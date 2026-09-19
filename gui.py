@@ -356,10 +356,21 @@ def main():
               f"mukodik.{ALAP}")
     else:
         print(f"{HA}  {cim}{'  (proba)' if args.proba else ''}{ALAP}")
-    print(f"\n{HA}  Telefonrol (HTTPS kell a mikrofonhoz):{ALAP}")
-    print(f"    {SZ}tailscale serve --bg {port}{ALAP}")
-    print(f"    {SZ}tailscale serve --bg --set-path=/ws {ws_port}{ALAP}")
-    print(f"{HA}  Mindketto kell - a masodik a hangkapcsolat.{ALAP}")
+    if not (os.environ.get("WS_KULSO_PORT") or os.environ.get("WS_UTVONAL")):
+        print(f"\n{HA}  Telefonrol HTTPS kell a mikrofonhoz. Ket ut van:{ALAP}")
+        print(f"{HA}   a) Tailscale:{ALAP}")
+        print(f"      {SZ}tailscale serve --bg {port}{ALAP}")
+        print(f"      {SZ}tailscale serve --bg --set-path=/ws {ws_port}{ALAP}")
+        print(f"      {HA}es a .env-be:  WS_UTVONAL=/ws{ALAP}")
+        print(f"{HA}   b) Forditott proxy (Synology, nginx):{ALAP}")
+        print(f"      {HA}443 -> localhost:{port}"
+              f"   es   9080 -> localhost:{ws_port}{ALAP}")
+        print(f"      {HA}es a .env-be:  WS_KULSO_PORT=9080{ALAP}")
+    else:
+        mod = (f"kulso port {os.environ['WS_KULSO_PORT']}"
+               if os.environ.get("WS_KULSO_PORT")
+               else f"utvonal {os.environ['WS_UTVONAL']}")
+        print(f"{HA}  HTTPS mogott: a hangkapcsolat a {mod} alatt.{ALAP}")
     print(f"\n{HA}  Leallitas: Ctrl+C{ALAP}\n")
 
     with MCPKliens() as mcp:

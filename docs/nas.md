@@ -75,10 +75,35 @@ scp ~/Kifli_Assistant/kifli.db admin@<nas-ip>:/volume1/docker/Kifli_Assistant/ad
 
 ---
 
-## 3. Indítsd el
+## 3. Jogosultságok
+
+A konténer a saját felhasználódként fut, hogy írni tudjon az `adat/`
+mappába. Derítsd ki az azonosítódat:
+
+```bash
+id -u && id -g
+```
+
+Synologyn tipikusan `1026` és `100`. Ha más, tedd a `.env`-be:
+
+```
+KIFLI_UID=1026
+KIFLI_GID=100
+```
+
+Aztán add meg a mappa tulajdonosát:
 
 ```bash
 mkdir -p adat
+sudo chown -R $(id -u):$(id -g) adat
+```
+
+> Ha ez kimarad, a felület működik, de a tanulás nem: az adatbázis
+> írásvédett lesz, és `attempt to write a readonly database` hibát kapsz.
+
+## 4. Indítsd el
+
+```bash
 sudo docker compose up -d --build
 ```
 
@@ -103,7 +128,7 @@ kell. Ez a következő lépés.
 
 ---
 
-## 4. HTTPS — kétféleképpen
+## 5. HTTPS — kétféleképpen
 
 ### A) Synology fordított proxyval (ha van DDNS-ed)
 
@@ -184,7 +209,7 @@ A Tailscale a Synology Csomagkezelőjéből telepíthető.
 
 ---
 
-## 5. Tedd a telefonodra
+## 6. Tedd a telefonodra
 
 A kapott HTTPS címet nyisd meg Safariban, engedélyezd a mikrofont, és
 **Megosztás → Hozzáadás a Főképernyőhöz**.
@@ -224,6 +249,8 @@ konténeren — újraépítésnél megmaradnak.
 | Betölt, de nem hall | Hiányzik a második proxy-szabály, vagy a `WS_KULSO_PORT` a `.env`-ből |
 | „A mikrofon nem indult el" | HTTP-n vagy. HTTPS kell |
 | Kevés a memória | `mem_limit` emelése a `docker-compose.yml`-ben |
+| `readonly database` | `sudo chown -R $(id -u):$(id -g) adat`, majd restart |
+| Nem tanul semmit | Ugyanaz: az `adat/` mappa jogosultsága |
 
 <details>
 <summary><b>A rohlik-mcp első indítása lassú</b></summary>

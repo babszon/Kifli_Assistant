@@ -29,9 +29,10 @@ ENV KIFLI_DB=/app/adat/kifli.db
 
 EXPOSE 8420 8421
 
-# Nem rootként fut
-RUN useradd -m -u 1026 kifli && chown -R kifli:kifli /app
-USER kifli
+# Nem rootként fut. A felhasználó azonosítóját a docker-compose adja
+# meg (user: "1026:100"), mert NAS-onként eltér - ha ez nem egyezik az
+# adat/ mappa tulajdonosával, az adatbázis írásvédett lenne.
+RUN chmod -R a+rX /app
 
 HEALTHCHECK --interval=60s --timeout=10s --start-period=30s \
   CMD python3 -c "import urllib.request; \

@@ -46,6 +46,10 @@ CREATE TABLE IF NOT EXISTS naplo (
 """
 
 
+class TaroloHiba(Exception):
+    pass
+
+
 def _most():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -62,6 +66,30 @@ class Tarolo:
         with self._zar:
             self.db.executescript(SEMA)
             self.db.commit()
+        self._irhato_e()
+
+    def _irhato_e(self):
+        """
+        Indulaskor ellenorizzuk, hogy tudunk-e irni. Kulonben csak
+        beszelgetes kozben derulne ki, hogy nem tanul semmit - es a
+        felhasznalo azt hinne, megjegyezte.
+        """
+        try:
+            with self._zar:
+                self.db.execute(
+                    "INSERT INTO naplo (datum, raw, kerdes, valasz) "
+                    "VALUES (?, '', 'inditas', 'iras-proba')", (_most(),))
+                self.db.execute(
+                    "DELETE FROM naplo WHERE kerdes = 'inditas'")
+                self.db.commit()
+        except sqlite3.OperationalError as e:
+            if "readonly" in str(e).lower():
+                raise TaroloHiba(
+                    f"Az adatbazis nem irhato: {self.utvonal}\n"
+                    f"  A tanulas nem fog mukodni.\n"
+                    f"  Javitas:  sudo chown -R $(id -u):$(id -g) "
+                    f"{self.utvonal.parent}") from e
+            raise
 
     def close(self):
         with self._zar:
