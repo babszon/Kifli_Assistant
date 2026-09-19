@@ -115,6 +115,20 @@ hogy "folytassam?". Csak ott allj meg, ahol tenyleg dontenie kell.
    visszaigazolasban 2 darabnak kell szerepelnie; ha 1 szerepel,
    szolj, hogy valami nem stimmel.
 
+HIBAK KEZELESE
+Ha egy eszkoz valaszaban 'hiba' mezo van, az a termek NEM kerult be a
+kosarba. Ilyenkor:
+- SOHA ne mondd, hogy bement, hogy betetted, vagy hogy megvan.
+- Mondd meg roviden, mi tortent, es lepj tovabb a kovetkezo tetelre.
+- A program magatol var es ujraprobal, ha a Kifli lassit - neked nem
+  kell ujra hivnod ugyanazt az eszkozt. Ha megis hibat kapsz, az mar a
+  vegleges allapot.
+- A vegen foglald ossze, mi maradt ki. Peldaul: "A tej, a kenyer es a
+  tojas bement. A mosoport most nem talalta a rendszer, azt majd
+  probaljuk ujra."
+- Ha bizonytalan vagy abban, mi van a kosarban, hivd a kosar_megmutat
+  eszkozt, es abbol beszelj - ne emlekezetbol.
+
 TILTASOK - EZEKET SOHA NE TEDD
 0. AZ ADATOK PONTOSSAGA. Ha az eszkoz valaszaban van 'adatok' mezo,
    az abban szereplo TERMEKNEVET, ARAT es KISZERELEST pontosan kell
@@ -386,12 +400,7 @@ class Asszisztens:
 
         # A korabbi talalatok is elerhetok maradnak, hogy a felhasznalo
         # visszahivatkozhasson rajuk ("akkor megis az elso legyen")
-        megvan = {t["id"] for t in self.utolso_talalatok}
-        self.utolso_talalatok.extend(t for t in talalatok
-                                     if t["id"] not in megvan)
-        for t in talalatok:
-            if t.get("ar"):
-                self.arak_szerint[t["id"]] = t["ar"]
+        self._talalatokat_megjegyez(talalatok)
 
         self._talalatok_kiir(termek, talalatok)
 
@@ -459,6 +468,21 @@ class Asszisztens:
         if talalat.get("kedvezmeny"):
             reszek.append(f"{abs(talalat['kedvezmeny'])} szazalek kedvezmennyel")
         return ", ".join(reszek) + "."
+
+    # Egy hosszu beszelgetesben sok kereses fut le; a talalatokat
+    # megtartjuk, hogy a felhasznalo visszahivatkozhasson rajuk, de nem
+    # korlatlanul - kulonben a memoria es a keresesi ido no.
+    TALALAT_KERET = 300
+
+    def _talalatokat_megjegyez(self, talalatok):
+        megvan = {t["id"] for t in self.utolso_talalatok}
+        self.utolso_talalatok.extend(t for t in talalatok
+                                     if t["id"] not in megvan)
+        if len(self.utolso_talalatok) > self.TALALAT_KERET:
+            del self.utolso_talalatok[:-self.TALALAT_KERET]
+        for t in talalatok:
+            if t.get("ar"):
+                self.arak_szerint[t["id"]] = t["ar"]
 
     def kosarba_tesz(self, kifli_id, termek):
         talalat = next((t for t in self.utolso_talalatok
@@ -548,18 +572,12 @@ class Asszisztens:
 
         osszeg = adat_kosar["osszesen"] or szamitott
         print(f"  {Z}  Osszesen: {osszeg:,.0f} Ft{ALAP}".replace(",", " "))
-        if adat_kosar["rendelheto"] is False:
-            print(f"  {S}  A Kifli szerint a kosar MEG NEM rendelheto "
-                  f"(valoszinuleg minimum rendelesi ertek){ALAP}")
 
-        eredmeny = {"kosar": tetelek, "osszeg_ft": round(osszeg) or None}
-        if adat_kosar["rendelheto"] is False:
-            eredmeny["rendelheto"] = False
-            eredmeny["figyelmeztetes"] = (
-                "A Kifli szerint a kosar MEG NEM rendelheto. Valoszinuleg "
-                "nincs meg meg a minimalis rendelesi ertek. Szolj a "
-                "felhasznalonak.")
-        return eredmeny
+        # A 'Can order' jelzest NEM ertelmezzuk: a Kifli addig 'No'-t ad,
+        # amig nincs kivalasztva szallitasi idosav, amit a felhasznalo a
+        # penztarnal tesz meg. Vagyis ez szinte mindig 'No', es semmit nem
+        # mond a kosarrol. Korabban ebbol lett egy felrevezeto uzenet.
+        return {"kosar": tetelek, "osszeg_ft": round(osszeg) or None}
 
     def kosarbol_kivesz(self, termek):
         """A VALODI Kifli kosarbol vesz le tetelt."""
@@ -709,8 +727,7 @@ class Asszisztens:
                 sor["akcios_most"] = True
                 sor["kedvezmeny"] = akcio.get("kedvezmeny")
                 sor["ar"] = akcio.get("ar")
-                self.arak_szerint[g["id"]] = akcio.get("ar")
-                self.utolso_talalatok.append(akcio)
+                self._talalatokat_megjegyez([akcio])
             eredmeny.append(sor)
 
         akciosok = [s for s in eredmeny if s.get("akcios_most")]
@@ -784,9 +801,7 @@ class Asszisztens:
         for t in rendezett:
             if t.get("ar"):
                 self.arak_szerint[t["id"]] = t["ar"]
-        megvan = {t["id"] for t in self.utolso_talalatok}
-        self.utolso_talalatok.extend(t for t in rendezett
-                                     if t["id"] not in megvan)
+        self._talalatokat_megjegyez(rendezett)
 
         print(f"\n{HA}  {len(rendezett)} akcios termek{ALAP}")
         for t in rendezett[:10]:
@@ -868,7 +883,6 @@ class Asszisztens:
         eredmeny = self.kosar_megmutat()
         tetelek = eredmeny.get("kosar", [])
         osszeg = eredmeny.get("osszeg_ft")
-        rendelheto = eredmeny.get("rendelheto")
 
         # Felolvashato osszefoglalo a VALODI kosarbol. Ez az utolso
         # pillanat, amikor a felhasznalo javithat, ezert minden tetel
@@ -886,15 +900,10 @@ class Asszisztens:
         if sorok:
             felolvasando = ("A kosaradban: " + "; ".join(sorok) + ". "
                             + (f"Osszesen {osszeg} forint." if osszeg else ""))
-            if rendelheto is False:
-                felolvasando += (" Figyelem: a Kifli szerint ez a kosar meg "
-                                 "nem rendelheto, valoszinuleg nincs meg a "
-                                 "minimalis rendelesi ertek.")
         else:
             felolvasando = "A kosarad ures."
 
         return {"kosar": tetelek, "osszeg_ft": osszeg,
-                "rendelheto": rendelheto,
                 "adatok": felolvasando,
                 "fontos": ("A termekek mar a Kifli kosaraban vannak, de a "
                            "RENDELES MEG NINCS LEADVA. Mondd el sajat "
@@ -925,13 +934,32 @@ class Asszisztens:
                   f"{kedv}{jel}")
 
     def hivas(self, nev, argumentumok):
+        """
+        Egy eszkoz meghivasa. SOHA nem dob kivetelt.
+
+        Ez kritikus: a realtime modell addig var, amig meg nem kapja a
+        valaszt az eszkozhivasra. Ha itt kivetel szallna fel, a hivo nem
+        kuldene vissza semmit, es a beszelgetes megallna. Ezert minden
+        hibat elkapunk, es hibauzenetkent adunk vissza - abbol a modell
+        tud mit mondani a felhasznalonak.
+        """
         fuggveny = getattr(self, nev, None)
-        if fuggveny is None:
+        if fuggveny is None or nev.startswith("_"):
             return {"hiba": f"Ismeretlen eszkoz: {nev}"}
         try:
-            return fuggveny(**(argumentumok or {}))
+            eredmeny = fuggveny(**(argumentumok or {}))
         except TypeError as e:
-            return {"hiba": f"Rossz parameterek: {e}"}
+            return {"hiba": f"Rossz parameterek ({nev}): {e}"}
+        except MCPHiba as e:
+            return {"hiba": str(e)}
+        except Exception as e:
+            print(f"  {PI}! {nev} hiba: {type(e).__name__}: {e}{ALAP}")
+            return {"hiba": f"Vartalan hiba a(z) {nev} kozben: {e}"}
+
+        # A megszolalas elott biztosan JSON-kent kuldheto legyen
+        if eredmeny is None:
+            return {"ok": True}
+        return eredmeny
 
 
 def main():

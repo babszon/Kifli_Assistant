@@ -169,10 +169,6 @@ button:focus-visible,[tabindex]:focus-visible{
   font-family:var(--beszed);font-size:23px;
   font-variant-numeric:tabular-nums;
 }
-.intes{
-  margin-top:11px;padding:9px 12px;border-radius:7px;font-size:12px;
-  background:rgba(217,164,65,.13);color:var(--arany);
-}
 .befejez{
   display:block;width:100%;margin-top:14px;padding:12px;
   background:var(--krem);color:var(--kobalt);border-radius:8px;
@@ -262,7 +258,6 @@ button:focus-visible,[tabindex]:focus-visible{
         <span>Összesen</span>
         <span class="szam" id="osszeg">0 Ft</span>
       </div>
-      <div class="intes" id="intes" hidden></div>
       <a class="befejez" href="https://www.kifli.hu/kosar" target="_blank"
          rel="noopener">Befejezem a Kifli appban</a>
     </div>
@@ -332,13 +327,12 @@ function allapot(a){
   $('#allapot-szo').textContent = szavak[a] || a;
 }
 
-function kosarKirajzol(kosar, osszeg, rendelheto){
+function kosarKirajzol(kosar, osszeg){
   const lista = $('#kosar-lista');
   if (!kosar || !kosar.length){
     lista.innerHTML = '<div class="ures">Még üres. Mondd, mire van szükséged.</div>';
     $('#kosar-darab').textContent = '';
     $('#osszeg').textContent = '0 Ft';
-    $('#intes').hidden = true;
     latottKosar.clear();
     return;
   }
@@ -358,11 +352,7 @@ function kosarKirajzol(kosar, osszeg, rendelheto){
   }
   $('#kosar-darab').textContent = db + ' tétel';
   $('#osszeg').textContent = ft(osszeg);
-  const intes = $('#intes');
-  if (rendelheto === false){
-    intes.textContent = 'A Kifli szerint még nem rendelhető — valószínűleg nincs meg a minimális rendelési érték.';
-    intes.hidden = false;
-  } else intes.hidden = true;
+
 }
 
 /* ── hang ─────────────────────────────────────────────── */
@@ -385,6 +375,10 @@ class Rogzito extends AudioWorkletProcessor {
 registerProcessor('rogzito', Rogzito);`;
 
 async function mikrofonIndit(){
+  try {
+    if (navigator.audioSession) navigator.audioSession.type = 'play-and-record';
+  } catch {}
+
   mikroFolyam = await navigator.mediaDevices.getUserMedia({
     audio: {
       echoCancellation: true,    // ← ez oldja meg a visszhangot hangszóron
@@ -402,12 +396,26 @@ async function mikrofonIndit(){
 
   dolgozo = new AudioWorkletNode(hangBe, 'rogzito');
   dolgozo.port.onmessage = e => {
+    // Hangszórós használatnál: amíg a modell beszél, nem küldünk
+    // mikrofonadatot. A böngésző visszhangtörlése általában elég,
+    // de zajos környezetben ez a biztos.
+    if (nemit_beszed_kozben && beszel_e()) return;
     if (ws && ws.readyState === 1) ws.send(e.data.puffer);
     const gyuru = Math.min(22, e.data.csucs * 70);
     $('#mikro').style.setProperty('--gyuru', gyuru.toFixed(1) + 'px');
   };
   hangBe.createMediaStreamSource(mikroFolyam).connect(dolgozo);
   $('#mikro').classList.add('hangos');
+}
+
+// Alapból bekapcsolva: a legtöbb helyzetben ez a biztonságos.
+// Fejhallgatóval kikapcsolható, akkor közbe is lehet vágni.
+let nemit_beszed_kozben = true;
+const LECSENGES = 0.35;
+
+function beszel_e(){
+  if (!hangKi) return false;
+  return hangKi.currentTime < jatszoIdo + LECSENGES;
 }
 
 function mikrofonAllj(){
@@ -505,7 +513,7 @@ function eszkozEredmeny(nev, e){
     talalatok('akciók', e.termekek);
   else if (['kosar_megmutat','kosar_osszeg','kosar_lezar',
             'kosarba_tesz','kosarbol_kivesz'].includes(nev)){
-    if (e.kosar) kosarKirajzol(e.kosar, e.osszeg_ft, e.rendelheto);
+    if (e.kosar) kosarKirajzol(e.kosar, e.osszeg_ft);
     else if (ws && ws.readyState === 1)
       ws.send(JSON.stringify({type:'kosar_frissit'}));
   }

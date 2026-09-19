@@ -273,6 +273,8 @@ Az API kulcs a Python oldalon marad, nem kerül ki a böngészőbe.
 | `llm.py` | a magyar szöveg normalizálása |
 | `szinkron.py` | listából kosár, beszélgetés nélkül |
 | `Dockerfile` | szerveres futtatás (NAS, VPS) |
+| `tesztek.py` | funkcionális tesztek, hálózat nélkül |
+| `ellenorzes.py` | statikus ellenőrzés |
 
 </details>
 
@@ -334,6 +336,25 @@ szinkronizálásnál történik, egyszer.
   csatolás. Fejhallgató vagy telefonos használat a járható út.
 
 ---
+
+## Fejlesztés
+
+```bash
+python3 tesztek.py       # 32 funkcionális teszt, hálózat nélkül
+python3 ellenorzes.py    # statikus ellenőrzés
+```
+
+A tesztek a Kifli valódi válaszformátumaival dolgoznak, hamis MCP
+szerverrel — nem kell hozzá fiók és internet. Minden pusholásnál a CI is
+lefuttatja őket.
+
+Amit külön ellenőriznek, mert ezekben csendben lehet hibázni:
+
+- a „30 tojás" 3 dobozt jelent, nem 30-at
+- a kosár törléséhez a **Cart ID** kell, nem a termék ID-ja
+- egy eszközhívás soha nem dobhat kivételt (a modell örökre várna)
+- a próba mód nem ír a valódi kosárba
+- a kilogramm és a liter nem keveredik az egységár-összehasonlításban
 
 ## Közreműködés
 

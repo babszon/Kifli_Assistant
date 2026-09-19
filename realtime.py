@@ -299,9 +299,13 @@ async def fut(asszisztens, szaraz, nem_szakit, erzekenyseg, csend_ms):
             try:
                 # Az eszkozok halozatot hivnak, ezert kulon szalon futnak,
                 # hogy ne blokkoljak a hangfolyamot
-                eredmeny = await asyncio.to_thread(
-                    asszisztens.hivas, nev, argumentumok)
+                try:
+                    eredmeny = await asyncio.to_thread(
+                        asszisztens.hivas, nev, argumentumok)
+                except Exception as e:
+                    eredmeny = {"hiba": f"Nem sikerult: {e}"}
 
+                # A valasz MINDIG menjen vissza, kulonben a modell orokre var
                 await ws.send(json.dumps({
                     "type": "conversation.item.create",
                     "item": {

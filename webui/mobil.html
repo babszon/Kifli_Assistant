@@ -101,8 +101,6 @@ body{
 .ktetel .db{color:var(--halvany);font-size:13px;
             font-variant-numeric:tabular-nums}
 .ktetel .ar{font-variant-numeric:tabular-nums;white-space:nowrap}
-.intes{margin:0 18px 12px;padding:9px 12px;border-radius:7px;font-size:12.5px;
-       background:rgba(217,164,65,.14);color:var(--arany)}
 
 /* ── alsó sáv ── */
 .also{display:flex;align-items:center;gap:14px;padding:12px 18px 16px;
@@ -153,7 +151,6 @@ body{
       <span class="db" id="kosar-db"></span>
       <span class="ossz" id="kosar-ossz"></span>
     </summary>
-    <div class="intes" id="intes" hidden></div>
     <div class="lista" id="kosar-lista"></div>
   </details>
 
@@ -203,7 +200,7 @@ function allapot(a){
   $('#allapot-szo').textContent = sz[a] || a;
 }
 
-function kosar(lista, osszeg, rendelheto){
+function kosar(lista, osszeg){
   const sav = $('#kosarsav');
   if (!lista || !lista.length){ sav.hidden = true; latott.clear(); return; }
   sav.hidden = false;
@@ -220,11 +217,7 @@ function kosar(lista, osszeg, rendelheto){
   }
   $('#kosar-db').textContent = db + ' tétel';
   $('#kosar-ossz').textContent = ft(osszeg);
-  const i = $('#intes');
-  if (rendelheto === false){
-    i.textContent = 'Még nincs meg a minimális rendelési érték.';
-    i.hidden = false;
-  } else i.hidden = true;
+
 }
 function esc(s){ const d = document.createElement('div');
   d.textContent = s == null ? '' : String(s); return d.innerHTML; }
@@ -241,16 +234,31 @@ class R extends AudioWorkletProcessor{
 registerProcessor('r', R);`;
 
 async function mikrofonIndit(){
+  // iOS: a Safari csak akkor kapcsolja be a HARDVERES visszhangtörlést,
+  // ha az audio-munkamenet típusa 'play-and-record'. Enélkül a mikrofon
+  // visszahallja a hangszórót, és az asszisztens megszakítja magát.
+  // Ezt a getUserMedia ELŐTT kell beállítani.
+  try {
+    if (navigator.audioSession) navigator.audioSession.type = 'play-and-record';
+  } catch {}
+
   folyamMikro = await navigator.mediaDevices.getUserMedia({
     audio:{ echoCancellation:true, noiseSuppression:true,
-            autoGainControl:true, channelCount:1 }});
+            autoGainControl:true, channelCount:1, sampleRate:HZ }});
+
   hangBe = new AudioContext({sampleRate: HZ});
   if (hangBe.state === 'suspended') await hangBe.resume();
   const u = URL.createObjectURL(new Blob([ROGZITO],
                                 {type:'application/javascript'}));
   await hangBe.audioWorklet.addModule(u); URL.revokeObjectURL(u);
   const n = new AudioWorkletNode(hangBe, 'r');
-  n.port.onmessage = e => { if (ws && ws.readyState === 1) ws.send(e.data); };
+  n.port.onmessage = e => {
+    // Második védelem: amíg a modell beszél, nem küldünk mikrofonadatot.
+    // Telefonon hangszóróval ez a biztos megoldás - a visszhangtörlés
+    // nem minden készüléken elég erős.
+    if (beszel_e()) return;
+    if (ws && ws.readyState === 1) ws.send(e.data);
+  };
   hangBe.createMediaStreamSource(folyamMikro).connect(n);
 
   hangKi = new AudioContext({sampleRate: HZ});
@@ -262,6 +270,14 @@ async function mikrofonIndit(){
 
   $('#mikro').dataset.be = '1';
   $('#sugo').textContent = 'Beszélj';
+}
+
+// Beszél-e épp a modell? A lejátszás vége után még adunk egy kis időt,
+// hogy a hangszóró lecsengése se menjen vissza a mikrofonon.
+const LECSENGES = 0.35;   // másodperc
+function beszel_e(){
+  if (!hangKi) return false;
+  return hangKi.currentTime < jatszoIdo + LECSENGES;
 }
 
 function mikrofonAllj(){
@@ -337,7 +353,7 @@ async function kapcsolodik(){
       rendszer('keresés: ' + (u.args.termek || ''));
     else if (u.type === 'tool_done'){
       const e2 = u.result;
-      if (e2 && e2.kosar) kosar(e2.kosar, e2.osszeg_ft, e2.rendelheto);
+      if (e2 && e2.kosar) kosar(e2.kosar, e2.osszeg_ft);
       else if (e2 && !e2.hiba && ['kosarba_tesz','kosarbol_kivesz']
                .includes(u.name) && ws.readyState === 1)
         ws.send(JSON.stringify({type:'kosar_frissit'}));

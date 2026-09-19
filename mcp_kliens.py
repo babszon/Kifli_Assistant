@@ -16,11 +16,23 @@ import os
 import subprocess
 import sys
 import threading
+import time
 import queue
+
+# A Kifli ratakorlatot szab. Ha egy mondatban sok terméket sorolsz fel,
+# a program mindegyikre kulon keresest indit - ezek tul gyorsan mennenek
+# ki, es 429-et kapnank. Ezert hivasok kozott minimalis szunetet tartunk,
+# es 429 utan varunk, majd ujraprobalunk.
+MIN_SZUNET = 0.7          # masodperc ket hivas kozott
+UJRA_VARAKOZAS = (2, 5, 11)   # 429 utan ennyit varunk, sorban
 
 
 class MCPHiba(Exception):
     pass
+
+
+class MCPRataHiba(MCPHiba):
+    """Ratakorlat - erdemes varni es ujraprobalni."""
 
 
 class MCPKliens:
@@ -33,6 +45,9 @@ class MCPKliens:
         self._valaszok = {}
         self._sor = queue.Queue()
         self._olvaso = None
+        # Egyszerre csak egy hivas mehet ki, es kozottuk szunet van
+        self._utemezo = threading.Lock()
+        self._utolso_hivas = 0.0
 
     # ------------------------------------------------------------ eletciklus
 
@@ -99,7 +114,7 @@ class MCPKliens:
         self.proc.stdin.write(json.dumps(uzenet) + "\n")
         self.proc.stdin.flush()
 
-    def _var(self, azonosito, timeout=120):
+    def _var(self, azonosito, timeout=180):
         if azonosito in self._valaszok:
             return self._valaszok.pop(azonosito)
         while True:
@@ -119,8 +134,8 @@ class MCPKliens:
         self._kuld({"jsonrpc": "2.0", "id": azon, "method": "tools/list"})
         return self._var(azon)["result"]["tools"]
 
-    def hiv(self, nev, argumentumok=None):
-        """Meghiv egy MCP toolt, es a szoveges valaszt adja vissza."""
+    def _hiv_egyszer(self, nev, argumentumok):
+        """Egyetlen hivas, ujraprobalkozas nelkul."""
         azon = self._kov_id()
         self._kuld({
             "jsonrpc": "2.0", "id": azon, "method": "tools/call",
@@ -139,8 +154,46 @@ class MCPKliens:
         szoveg = "\n".join(darabok)
 
         if eredmeny.get("isError"):
+            if "429" in szoveg or "Too Many Requests" in szoveg:
+                raise MCPRataHiba(szoveg)
             raise MCPHiba(f"{nev}: {szoveg}")
         return szoveg
+
+    def hiv(self, nev, argumentumok=None):
+        """
+        Meghiv egy MCP toolt, es a szoveges valaszt adja vissza.
+
+        Ket hivas kozott minimalis szunetet tart, es ratakorlat (429)
+        eseten var, majd ujraprobal. Igy egy tobb terméket tartalmazo
+        mondat sem futtatja ki a Kifli korlatjat.
+        """
+        with self._utemezo:
+            eltelt = time.monotonic() - self._utolso_hivas
+            if eltelt < MIN_SZUNET:
+                time.sleep(MIN_SZUNET - eltelt)
+
+            utolso = None
+            for probalkozas in range(len(UJRA_VARAKOZAS) + 1):
+                try:
+                    eredmeny = self._hiv_egyszer(nev, argumentumok)
+                    self._utolso_hivas = time.monotonic()
+                    return eredmeny
+                except MCPRataHiba as e:
+                    utolso = e
+                    if probalkozas >= len(UJRA_VARAKOZAS):
+                        break
+                    var = UJRA_VARAKOZAS[probalkozas]
+                    print(f"\033[90m  (a Kifli lassit, {var} mp varakozas"
+                          f"...)\033[0m", flush=True)
+                    time.sleep(var)
+                except MCPHiba:
+                    self._utolso_hivas = time.monotonic()
+                    raise
+
+            self._utolso_hivas = time.monotonic()
+            raise MCPHiba(
+                f"{nev}: a Kifli tul sok kerest kapott, es tobb probalkozas "
+                f"utan sem valaszolt. ({utolso})")
 
 
 if __name__ == "__main__":

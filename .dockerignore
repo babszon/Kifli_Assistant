@@ -8,3 +8,5 @@ __pycache__/
 docs/
 *.md
 !normalizalo_prompt.md
+tesztek.py
+ellenorzes.py

@@ -6,7 +6,7 @@ on:
   pull_request:
 
 jobs:
-  szintaxis:
+  teszt:
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -17,19 +17,30 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
 
+      - name: Függőségek
+        run: pip install -q -r requirements.txt
+
       - name: Szintaxis
         run: python -m compileall -q .
 
+      - name: Statikus ellenőrzés
+        run: python ellenorzes.py
+
+      - name: Funkcionális tesztek
+        run: python tesztek.py
+
       - name: Titkok nem szivárogtak-e ki
         run: |
-          if grep -rInE "sk-[A-Za-z0-9_-]{20,}|ROHLIK_PASSWORD=.+" \
-               --include="*.py" --include="*.md" --include="*.html" .; then
-            echo "::error::Titoknak tűnő tartalom a repóban"
+          # Valódi kulcsra és jelszóra keresünk. A példák (jelszo, sk-...)
+          # és a kód, ami ezeket írja, nem számít találatnak.
+          talalat=$(grep -rInE "sk-[A-Za-z0-9_-]{32,}|sk-proj-[A-Za-z0-9_-]{20,}" \
+                      --include="*.py" --include="*.md" --include="*.html" . \
+                    || true)
+          if [ -n "$talalat" ]; then
+            echo "$talalat"
+            echo "::error::API kulcsnak tűnő tartalom a repóban"
             exit 1
           fi
           test ! -f .env || (echo "::error::.env bekerült a repóba" && exit 1)
-
-      - name: Modulok importálhatók
-        run: |
-          pip install -q -r requirements.txt
-          python -c "import parser, arak, adat, motor, mcp_kliens"
+          test ! -f kifli.db || (echo "::error::adatbázis a repóban" && exit 1)
+          ! ls adat/*.db 2>/dev/null || (echo "::error::adatbázis" && exit 1)

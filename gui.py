@@ -79,9 +79,15 @@ class Hid:
         await self.kuld_ui("tool_start", name=nev, args=argumentumok)
         self.allapot["fuggo_eszkozok"] += 1
         try:
-            eredmeny = await asyncio.to_thread(
-                self.asszisztens.hivas, nev, argumentumok)
+            # A hivas() sosem dob kivetelt, de a szal maga elszallhat
+            try:
+                eredmeny = await asyncio.to_thread(
+                    self.asszisztens.hivas, nev, argumentumok)
+            except Exception as e:
+                eredmeny = {"hiba": f"Nem sikerult: {e}"}
+
             await self.kuld_ui("tool_done", name=nev, result=eredmeny)
+            # A valasz MINDIG menjen vissza, kulonben a modell orokre var
             await self.nyitott.send(json.dumps({
                 "type": "conversation.item.create",
                 "item": {"type": "function_call_output",
@@ -180,7 +186,6 @@ class Hid:
         fejlec = {"Authorization":
                   f"Bearer {os.environ['OPENAI_API_KEY']}"}
 
-        import asszisztens as asz
         import realtime as rt
 
         async with websockets.connect(url, additional_headers=fejlec,
