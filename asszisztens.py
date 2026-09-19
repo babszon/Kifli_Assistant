@@ -209,17 +209,29 @@ DONTESI ELVEK
   eszkozzel ellenorizni, hogy nincs-e mar folyamatban rendeles.
 
 FELTOLTOTT KEP
-- Ha a felhasznalo kepet tolt fel a listajarol, hivd a feltoltott_lista
-  eszkozt. A kep lehet kezzel irt cetli vagy kepernyokep.
-- A 'biztosan_olvashato' tételekkel ugy jarj el, mintha diktalta volna
-  oket: keress ra, es tedd be a szokasos modon.
-- A 'bizonytalan' tételeket OLVASD FEL, es kerdezd meg, jol olvastad-e.
-  Peldaul: "Van itt egy sor, amit nem tudok biztosan kiolvasni -
-  harminc deka trappista lehet, vagy otven?" Ezeket csak a valasza utan
-  tedd be.
-- Ha kezirasos volt a lista, a vegen foglald ossze, mit olvastal ki, es
-  kerdezd meg, maradt-e ki valami.
-- SOHA ne talalj ki tételt, ami nem szerepelt a kiolvasott listaban.
+Ha a felhasznalo kepet tolt fel a listajarol, hivd a feltoltott_lista
+eszkozt. HAROM csoportot kapsz vissza, es mindegyikkel MAS a teendo.
+
+1. 'biztosan_olvashato' - ugy jarj el, mintha diktalta volna: keress ra,
+   es tedd be.
+
+2. 'rank_bizta' - olvashato, de a felhasznalo szandekosan nyitva hagyta:
+   "kenyer valami jobb fele", "valami dinnye", "tojas jobb fele".
+   NE KERDEZZ VISSZA. Keress ra, es valaszd a LEGJOBB AR-ERTEK ARANYUT -
+   nem a legolcsobbat, hanem azt, ami a penzeert a legtobbet adja.
+   A "jobb fele" azt jelenti, hogy a minoseg szamit, nem csak az ar.
+   A visszaigazolasban mondd meg, mit valasztottal es miert roviden:
+   "A kenyerbol a teljes kiorlesu Rozsavolgyit tettem be, mert az
+   olcsobb kilonkent, mint a tobbi teljes kiorlesu."
+
+3. 'bizonytalan' - ezeket nem tudtuk elolvasni. EGYSZERRE olvasd fel
+   oket, egy mondatban, ne egyesevel. Peldaul: "Harom sort nem tudok
+   biztosan kiolvasni: a hatodikban paprika van valami athuzva, a
+   WC papirnal lelog a sor vege, es van egy sor, ami lehet harminc vagy
+   otven deka." Csak a valasza utan tedd be oket.
+
+A vegen foglald ossze, mit tettel be, es kerdezd meg, maradt-e ki
+valami. SOHA ne talalj ki tételt, ami nem szerepelt a listan.
 
 HELYETTESITES - OLCSOBB ALTERNATIVAK
 - Ha a felhasznalo azt kerdezi, lehetne-e olcsobban, vagy ha a lezaras
@@ -840,23 +852,41 @@ class Asszisztens:
         adatok = self.kep_tetelek
         self.kep_tetelek = None        # egyszer hasznaljuk fel
 
-        biztos = [t for t in adatok["tetelek"] if t["megbizhatosag"] >= 0.8]
-        kerdeses = [t for t in adatok["tetelek"] if t["megbizhatosag"] < 0.8]
+        # Harom kulon kategoria, mert MAS a teendo mindegyikkel:
+        #  - biztos:      keresd meg es tedd be
+        #  - nyitott:     olvashato, de rank bizta a valasztast
+        #  - bizonytalan: nem tudtuk elolvasni, kerdezni kell
+        biztos, nyitott, kerdeses = [], [], []
+        for t in adatok["tetelek"]:
+            if t["megbizhatosag"] < 0.8:
+                kerdeses.append(t)
+            elif t.get("nyitott"):
+                nyitott.append(t)
+            else:
+                biztos.append(t)
 
         return {
             "tetelek": adatok["tetelek"],
             "biztosan_olvashato": [t["szoveg"] for t in biztos],
+            "rank_bizta": [t["szoveg"] for t in nyitott],
             "bizonytalan": [
                 {"szoveg": t["szoveg"],
                  "mi_nem_egyertelmu": t.get("bizonytalan_resz")}
                 for t in kerdeses],
             "iras_tipusa": adatok.get("iras_tipusa"),
             "megjegyzes": (
-                "A 'biztosan_olvashato' tételeket keresd meg es tedd be a "
-                "szokasos modon. A 'bizonytalan' tételeket OLVASD FEL a "
-                "felhasznalonak, es kerdezd meg, jol olvastad-e - ezeket "
-                "csak a valasza utan tedd be. Ha kezirasos a lista, "
-                "erdemes a vegen osszefoglalni, mit olvastal ki."),
+                "HAROM csoport, mindegyikkel MAS a teendo.\n"
+                "1. 'biztosan_olvashato': keresd meg es tedd be a szokasos "
+                "modon.\n"
+                "2. 'rank_bizta': a felhasznalo szandekosan nem hatarozta "
+                "meg (peldaul 'valami jobb fele kenyer'). NE kerdezz "
+                "vissza - keress ra, es tedd be a LEGJOBB AR-ERTEK "
+                "ARANYU valasztast. A visszaigazolasban mondd meg, mit "
+                "valasztottal es miert.\n"
+                "3. 'bizonytalan': ezeket nem tudtuk elolvasni. Ezeket "
+                "EGYSZERRE olvasd fel, egy mondatban - ne egyesevel "
+                "kerdezz ra mindegyikre, az faraszto. Csak a valasza utan "
+                "tedd be oket."),
         }
 
     def helyettesitest_javasol(self, termek=None):

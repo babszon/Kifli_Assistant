@@ -43,6 +43,17 @@ SZABALYOK
 5. A cim, a datum, a "bevasarlolista" felirat es az osszeadott vegosszeg
    NEM tétel - ne vedd fel.
 
+NYITOTT TETELEK - EZ NEM UGYANAZ, MINT A BIZONYTALANSAG
+Ha a sor OLVASHATO, de a felhasznalo szandekosan nem hatarozta meg
+pontosan a terméket, az NEM olvasasi bizonytalansag. Ilyen peldaul:
+  "kenyer valami jobb fele szeletelt"
+  "valami dinnye"
+  "tojas jobb fele"
+  "valamilyen sajt"
+Ezeknel a megbizhatosag MAGAS (jol olvastad), de tedd be a
+'nyitott: true' mezot. A felhasznalo ezzel azt mondja, hogy valasszunk
+helyette - nem azt, hogy kerdezzunk vissza.
+
 MEGBIZHATOSAG - EZ A LEGFONTOSABB
 Minden tételnel mondd meg, mennyire vagy biztos abban, amit olvasol:
 - 0.9 folott: tisztan olvashato, nyomtatott vagy egyertelmu keziras
@@ -54,6 +65,14 @@ elolvasni, vedd fel alacsony megbizhatosaggal, es a 'bizonytalan_resz'
 mezoben mondd meg, mi az, amit nem tudsz kiolvasni. Inkabb legyen egy
 tétel bizonytalan, mint hogy rosszat talalj ki.
 
+HA A KEP SZELE LEVAGJA A SORT
+Ha egy sor belelog a kep szelebe, es a folytatas hianyzik, vedd fel
+alacsony megbizhatosaggal, es a 'bizonytalan_resz' mezobe ird:
+"a sor vege lelog a keprol". Ilyenkor a felhasznalonak ujra kell
+fotoznia - ezt jobb megmondani, mint kitalalni a folytatast.
+Ha a kep alja vagy teteje vag le sorokat, azt a 'uzenet' mezoben
+jelezd.
+
 Ha a kepen NEM bevasarlolista van, add vissza: {"tetelek": [],
 "uzenet": "roviden mi van a kepen"}.
 
@@ -62,7 +81,8 @@ VALASZ - csak ez a JSON, semmi mas:
   "tetelek": [
     {"szoveg": "a tétel ugy, ahogy irva van",
      "megbizhatosag": 0.0-1.0,
-     "bizonytalan_resz": "mi nem olvashato, vagy null"}
+     "bizonytalan_resz": "mi nem olvashato, vagy null",
+     "nyitott": true ha a felhasznalo rank bizza a valasztast}
   ],
   "iras_tipusa": "keziras" | "nyomtatott" | "kepernyokep",
   "uzenet": "egy rovid mondat magyarul, ha van barmi emlitesre melto"
@@ -213,6 +233,8 @@ def _feldolgoz(valasz):
             "szoveg": szov,
             "megbizhatosag": max(0.0, min(1.0, biztos)),
             "bizonytalan_resz": t.get("bizonytalan_resz") or None,
+            # "valami jobb fele kenyer" - olvashato, de rank bizza
+            "nyitott": bool(t.get("nyitott")),
         })
 
     return {"tetelek": tetelek,

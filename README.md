@@ -13,7 +13,7 @@ Magyarul, úgy ahogy tényleg beszélsz — „harminc deka trappistát”,
 ![Python](https://img.shields.io/badge/Python-3.9+-132B52?style=flat-square&labelColor=0F2342)
 ![OpenAI Realtime](https://img.shields.io/badge/OpenAI-Realtime-132B52?style=flat-square&labelColor=0F2342)
 ![Magyar](https://img.shields.io/badge/nyelv-magyar-C8322B?style=flat-square&labelColor=0F2342)
-![Tesztek](https://img.shields.io/badge/tesztek-71-7FB069?style=flat-square&labelColor=0F2342)
+![Tesztek](https://img.shields.io/badge/tesztek-72-7FB069?style=flat-square&labelColor=0F2342)
 ![Licenc](https://img.shields.io/badge/licenc-MIT-7FB069?style=flat-square&labelColor=0F2342)
 
 </div>
@@ -60,9 +60,9 @@ tesztmondatból 41-et old meg helyesen.
 
 **Lefotózod a cetlit**
 
-Kézzel írt lista vagy képernyőkép. Amit nem tud biztosan elolvasni, azt
-felolvassa és rákérdez — nem teszi be csendben. Telefonon a kamera, gépen
-a fogd-és-vidd vagy a `Cmd+V`.
+Kézzel írt lista vagy képernyőkép. Amit nem tud elolvasni, arra rákérdez;
+amit rábíztál („valami jobb féle kenyér"), ott ő választ. Telefonon a
+kamera, gépen a fogd-és-vidd vagy a `Cmd+V`.
 
 </td>
 </tr>
@@ -308,7 +308,7 @@ Az API kulcs a Python oldalon marad, nem kerül ki a böngészőbe.
 | `llm.py` | a magyar szöveg normalizálása |
 | `szinkron.py` | listából kosár, beszélgetés nélkül |
 | `api.py` | telefonos gyorsfelvétel (Siri) |
-| `tesztek.py` | 71 funkcionális teszt, hálózat nélkül |
+| `tesztek.py` | 72 funkcionális teszt, hálózat nélkül |
 | `ellenorzes.py` | statikus ellenőrzés |
 | `Dockerfile` | szerveres futtatás (NAS, VPS) |
 
@@ -374,7 +374,8 @@ szinkronizálásnál történik, egyszer.
   használat után lassít. A program magától vár és újrapróbál, de ha
   tartósan blokkol, pár percet kell várni.
 - **A kézírás felismerése nem tökéletes.** Ezért minden bizonytalan
-  tételre rákérdez, ahelyett hogy találgatna.
+  tételre rákérdez, ahelyett hogy találgatna. Ha a kép széle levágja a
+  sort, azt is jelzi — újrafotózás kell.
 - A hangfelismerés ritka márkaneveket félrehallhat. A gyakoriakat
   (Old Spice, Hellmann's, Heinz, Finish) megtanítottuk neki.
 - **Autóban visszhangozhat** — ott erős a hangszóró és a mikrofon közti
@@ -385,7 +386,7 @@ szinkronizálásnál történik, egyszer.
 ## Fejlesztés
 
 ```bash
-python3 tesztek.py       # 71 funkcionális teszt, hálózat nélkül
+python3 tesztek.py       # 72 funkcionális teszt, hálózat nélkül
 python3 ellenorzes.py    # statikus ellenőrzés
 ```
 

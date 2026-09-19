@@ -438,9 +438,13 @@ function kepAllapot(u){
   const t = u.tetelek || [];
   if (!t.length) return rendszer('Nem találtam listát a képen.');
   const biz = t.filter(x => x.megbizhatosag < 0.8).length;
+  const nyitott = t.filter(x => x.megbizhatosag >= 0.8 && x.nyitott).length;
+  const reszek = [];
+  if (biz) reszek.push(`${biz} bizonytalan`);
+  if (nyitott) reszek.push(`${nyitott} rád bízva`);
   rendszer(`${t.length} tételt olvastam ki`
            + (u.iras === 'keziras' ? ' (kézírás)' : '')
-           + (biz ? ` — ${biz} bizonytalan` : ''));
+           + (reszek.length ? ' — ' + reszek.join(', ') : ''));
 }
 
 $('#kepfajl').onchange = e => { kepetKuld(e.target.files[0]);

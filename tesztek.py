@@ -900,23 +900,56 @@ def _():
         urllib.request.urlopen = eredeti
 
 
-@teszt("a bizonytalan tételeket kulon adja at a modellnek")
+@teszt("harom csoport: biztos, rank bizott, bizonytalan")
 def _():
+    # A valodi cetli harom fele sort tartalmazott, es MAS a teendo
+    # mindegyikkel - ezeket nem szabad osszekeverni.
     a = uj_asszisztens()
     a.kep_tetelek = {"tetelek": [
-        {"szoveg": "2 l tej", "megbizhatosag": 0.95,
-         "bizonytalan_resz": None},
-        {"szoveg": "trap. 30 dkg", "megbizhatosag": 0.55,
-         "bizonytalan_resz": "30 vagy 50"}],
+        {"szoveg": "Kefir 6 db kicsi", "megbizhatosag": 0.95,
+         "bizonytalan_resz": None, "nyitott": False},
+        {"szoveg": "kenyér valami jobb féle szeletelt",
+         "megbizhatosag": 0.9, "bizonytalan_resz": None, "nyitott": True},
+        {"szoveg": "valami dinnye", "megbizhatosag": 0.88,
+         "bizonytalan_resz": None, "nyitott": True},
+        {"szoveg": "paprika ??? 1 kg", "megbizhatosag": 0.45,
+         "bizonytalan_resz": "áthúzott rész"}],
         "iras_tipusa": "keziras"}
 
     r = a.feltoltott_lista()
-    assert r["biztosan_olvashato"] == ["2 l tej"], r
+    assert r["biztosan_olvashato"] == ["Kefir 6 db kicsi"], r
+    assert len(r["rank_bizta"]) == 2, r["rank_bizta"]
+    assert "kenyér valami jobb féle szeletelt" in r["rank_bizta"]
     assert len(r["bizonytalan"]) == 1
-    assert r["bizonytalan"][0]["mi_nem_egyertelmu"] == "30 vagy 50"
-    assert "OLVASD FEL" in r["megjegyzes"]
+    assert r["bizonytalan"][0]["mi_nem_egyertelmu"] == "áthúzott rész"
+
+    # A nyitott tétel NEM kerulhet a kerdesesek koze - arra nem
+    # kerdezunk vissza, hanem valasztunk
+    kerdesek = json.dumps(r["bizonytalan"], ensure_ascii=False)
+    assert "dinnye" not in kerdesek, "a nyitott tétel kerdeses lett"
+
+    assert "AR-ERTEK" in r["megjegyzes"], "nincs utasitas a valasztasra"
+    assert "EGYSZERRE" in r["megjegyzes"], "egyesevel kerdezne"
+
     # csak egyszer hasznalhato fel
     assert a.feltoltott_lista()["tetelek"] == []
+
+
+@teszt("a nyitott tételt a felismero is megkulonbozteti")
+def _():
+    import kep
+
+    def v(t):
+        return {"choices": [{"message": {"content": t}}]}
+
+    r = kep._feldolgoz(v(json.dumps({"tetelek": [
+        {"szoveg": "kenyér valami jobb féle", "megbizhatosag": 0.9,
+         "nyitott": True},
+        {"szoveg": "Kefir 6 db", "megbizhatosag": 0.95}]})))
+    assert r["tetelek"][0]["nyitott"] is True
+    assert r["tetelek"][1]["nyitott"] is False
+    # a promptban is szerepelnie kell
+    assert "NYITOTT TETELEK" in kep.PROMPT
 
 
 @teszt("kep nelkul nem talal ki listat")
