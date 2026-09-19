@@ -1096,21 +1096,31 @@ class Asszisztens:
 
         savok = self._idosavok_ertelmez(nyers)
         if not savok:
-            return {"uzenet": "Nem sikerult kiolvasni a szabad idosavokat.",
-                    "nyers_reszlet": nyers[:1500]}
+            return {"idosavok": [],
+                    "uzenet": ("Most nincs szabad idosav - vagy minden "
+                               "betelt, vagy a Kifli nem adott vissza "
+                               "hasznalhato adatot."),
+                    "megjegyzes": ("Mondd meg a felhasznalonak, hogy most "
+                                   "nem latsz szabad idopontot, es hogy a "
+                                   "Kifli appban erdemes megneznie. NE "
+                                   "talalj ki idopontot."),
+                    "nyers_reszlet": nyers[:800]}
 
         print(f"\n{HA}  Legkozelebbi szabad idosavok:{ALAP}")
         for s in savok[:6]:
             ar = "ingyenes" if s["ar"] == 0 else f"{s['ar']:.0f} Ft"
-            jelek = ("".join(j for j, v in (("P", s.get("premium")),
-                                            ("E", s.get("eco"))) if v))
+            jelek = "".join(j for j, v in (("P", s.get("premium")),
+                                           ("E", s.get("eco"))) if v)
+            cimke = f"  {s['cimke']}" if s.get("cimke") else ""
             print(f"  {HA}{s['nap']} {s['ido']}  -  {ar}"
-                  f"{'  ' + jelek if jelek else ''}{ALAP}")
+                  f"{'  ' + jelek if jelek else ''}{cimke}{ALAP}")
 
         ingyenesek = [s for s in savok if s["ar"] == 0]
+        cimkezett = [s for s in savok if s.get("cimke")]
         return {
             "idosavok": savok[:12],
             "legkorabbi": savok[0] if savok else None,
+            "kiemelt": cimkezett[:3],
             "ingyenes_savok_szama": len(ingyenesek),
             "megjegyzes": (
                 "A lista idorendben van, az elso a legkorabbi. Az idosavot "
@@ -1122,40 +1132,80 @@ class Asszisztens:
 
     @staticmethod
     def _idosavok_ertelmez(nyers):
-        """A get_delivery_slots JSON-t ad vissza; kiszedjuk a lenyeget."""
+        """
+        A get_delivery_slots valaszanak ertelmezese.
+
+        A valasz NEM tiszta JSON: egy '⏰ DELIVERY SLOTS:' fejlec elozi
+        meg, ezert a JSON-t ki kell vagni belole. A szerkezetben van
+        kulon 'expressSlot', 'preselectedSlots' (cimkezett ajanlatok) es
+        a napokra bontott teljes lista - mindet bejarjuk.
+        """
+        if not nyers:
+            return []
+
+        # A JSON a szoveges fejlec utan kezdodik
+        eleje = nyers.find("{")
+        vege = nyers.rfind("}")
+        if eleje == -1 or vege == -1:
+            return []
         try:
-            adatok = json.loads(nyers)
+            adatok = json.loads(nyers[eleje:vege + 1])
         except json.JSONDecodeError:
             return []
 
-        talalt = []
+        talalt = {}
 
-        def bejar(csomo):
+        def sav_felvesz(csomo, cimke=None):
+            kapacitas = csomo.get("timeSlotCapacityDTO") or {}
+            uzenet = (kapacitas.get("capacityMessage") or "").lower()
+            # A betelt savokat kihagyjuk: "Elkelt", "Megtelt", vagy RED
+            if csomo.get("capacity") == "RED" or uzenet in ("elkelt", "megtelt"):
+                return
+            if (kapacitas.get("totalFreeCapacityPercent") or 0) <= 0:
+                return
+
+            azonosito = csomo.get("slotId")
+            if azonosito in talalt:
+                if cimke and not talalt[azonosito].get("cimke"):
+                    talalt[azonosito]["cimke"] = cimke
+                return
+
+            talalt[azonosito] = {
+                "nap": str(csomo.get("since", ""))[:10],
+                "ido": csomo.get("timeWindow")
+                       or f"{str(csomo.get('since'))[11:16]}-"
+                          f"{str(csomo.get('till'))[11:16]}",
+                "ar": csomo.get("price", 0),
+                "tipus": csomo.get("type"),
+                "premium": bool(csomo.get("premium")),
+                "eco": bool(csomo.get("eco")),
+                "szabad": kapacitas.get("capacityMessage"),
+            }
+            if cimke:
+                talalt[azonosito]["cimke"] = cimke
+
+        def bejar(csomo, cimke=None):
             if isinstance(csomo, dict):
-                if "slotId" in csomo and "since" in csomo:
-                    kapacitas = (csomo.get("timeSlotCapacityDTO") or {})
-                    if csomo.get("capacity") == "RED":
-                        return
-                    talalt.append({
-                        "nap": str(csomo.get("since", ""))[:10],
-                        "ido": csomo.get("timeWindow")
-                               or f"{str(csomo.get('since'))[11:16]}-"
-                                  f"{str(csomo.get('till'))[11:16]}",
-                        "ar": csomo.get("price", 0),
-                        "szabad": kapacitas.get("capacityMessage"),
-                        "premium": bool(csomo.get("premium")),
-                        "eco": bool(csomo.get("eco")),
-                    })
+                # Cimkezett ajanlat: {"title": "...", "slot": {...}}
+                if "slot" in csomo and isinstance(csomo["slot"], dict):
+                    alcim = (csomo.get("title") or "").strip()
+                    bejar(csomo["slot"], alcim or cimke)
                     return
-                for ertek in csomo.values():
-                    bejar(ertek)
+                if "slotId" in csomo and "since" in csomo:
+                    sav_felvesz(csomo, cimke)
+                    return
+                for kulcs, ertek in csomo.items():
+                    # Az expressSlot kulon cimkét kap
+                    alcimke = ("Expressz" if kulcs == "expressSlot"
+                               else cimke)
+                    bejar(ertek, alcimke)
             elif isinstance(csomo, list):
                 for elem in csomo:
-                    bejar(elem)
+                    bejar(elem, cimke)
 
         bejar(adatok)
-        talalt.sort(key=lambda s: (s["nap"], s["ido"]))
-        return talalt
+        savok = sorted(talalt.values(), key=lambda s: (s["nap"], s["ido"]))
+        return savok
 
     def kosar_lezar(self):
         self.lezarva = True

@@ -136,15 +136,45 @@ FIOK = json.dumps({
     "cart": {"total_price": 6067, "can_make_order": False},
 })
 
-IDOSAVOK = json.dumps({"slots": [{"days": [{"slots": [
-    {"slotId": 1, "since": "2026-09-19 08:00", "till": "2026-09-19 10:00",
-     "capacity": "GREEN", "price": 490, "timeWindow": "08:00 – 10:00",
-     "premium": True, "eco": False,
-     "timeSlotCapacityDTO": {"capacityMessage": "Szabad"}},
-    {"slotId": 2, "since": "2026-09-19 10:00", "till": "2026-09-19 12:00",
-     "capacity": "RED", "price": 0, "timeWindow": "10:00 – 12:00",
-     "timeSlotCapacityDTO": {"capacityMessage": "Megtelt"}},
-]}]}]})
+# A valodi Kifli valasz: szoveges fejlec + JSON, kulon expressSlot es
+# cimkezett preselectedSlots
+IDOSAVOK = "⏰ DELIVERY SLOTS:\n" + json.dumps({
+    "announcements": [],
+    "expressSlot": {
+        "slotId": 273103, "type": "EXPRESS",
+        "since": "2026-09-19 11:45", "till": "2026-09-19 12:00",
+        "premium": False, "eco": False, "capacity": "GREEN",
+        "timeSlotCapacityDTO": {"totalFreeCapacityPercent": 0,
+                                "capacityMessage": "Elkelt"},
+        "price": 0, "timeWindow": "11:45 – 12:00"},
+    "preselectedSlots": [{
+        "title": "Leggyorsabb hagyományos",
+        "slot": {
+            "slotId": 273099, "type": "ON_TIME",
+            "since": "2026-09-19 12:45", "till": "2026-09-19 13:00",
+            "premium": False, "eco": False, "capacity": "GREEN",
+            "timeSlotCapacityDTO": {"totalFreeCapacityPercent": 82,
+                                    "capacityMessage": "Szabad"},
+            "price": 0, "timeWindow": "12:45 – 13:00"}}],
+    "slots": [{"days": [{"slots": [
+        {"slotId": 273099, "type": "ON_TIME", "since": "2026-09-19 12:45",
+         "till": "2026-09-19 13:00", "premium": False, "eco": False,
+         "capacity": "GREEN", "price": 0, "timeWindow": "12:45 – 13:00",
+         "timeSlotCapacityDTO": {"totalFreeCapacityPercent": 82,
+                                 "capacityMessage": "Szabad"}},
+        {"slotId": 273200, "type": "ON_TIME", "since": "2026-09-19 20:00",
+         "till": "2026-09-19 22:00", "premium": True, "eco": False,
+         "capacity": "GREEN", "price": 490, "timeWindow": "20:00 – 22:00",
+         "timeSlotCapacityDTO": {"totalFreeCapacityPercent": 95,
+                                 "capacityMessage": "Szabad"}},
+        {"slotId": 273300, "type": "ON_TIME", "since": "2026-09-20 08:00",
+         "till": "2026-09-20 10:00", "premium": False, "eco": False,
+         "capacity": "RED", "price": 0, "timeWindow": "08:00 – 10:00",
+         "timeSlotCapacityDTO": {"totalFreeCapacityPercent": 0,
+                                 "capacityMessage": "Megtelt"}},
+    ]}]}],
+})
+
 
 
 class HamisMCP:
@@ -231,12 +261,21 @@ def _():
     assert g[0]["rendelesek"] == 9
 
 
-@teszt("idosavok: a megtelt kimarad")
+@teszt("idosavok: szoveges fejlec, betelt savok, cimkek")
 def _():
     import asszisztens as asz
     s = asz.Asszisztens._idosavok_ertelmez(IDOSAVOK)
-    assert len(s) == 1, f"{len(s)} sav, 1 kellene (a RED kimarad)"
-    assert s[0]["ar"] == 490
+    # A valasz nem tiszta JSON - a fejlec nem akaszthatja meg
+    assert s, "a szoveges fejlec miatt nem ertelmezte a JSON-t"
+    assert len(s) == 2, f"{len(s)} sav, 2 kellene"
+    idok = [x["ido"] for x in s]
+    assert "11:45 – 12:00" not in idok, "az Elkelt expressz bekerult"
+    assert "08:00 – 10:00" not in idok, "a Megtelt sav bekerult"
+    # ugyanaz a slotId ketszer szerepel, csak egyszer kerulhet be
+    assert len([x for x in s if x["ido"] == "12:45 – 13:00"]) == 1
+    cimkezett = next(x for x in s if x["ido"] == "12:45 – 13:00")
+    assert cimkezett["cimke"] == "Leggyorsabb hagyományos"
+    assert any(x["premium"] for x in s), "a premium jelzes elveszett"
 
 
 @teszt("ertelmetlen bemenet nem szall el")
@@ -515,8 +554,8 @@ def _():
                     "beallitottam", "sikeresen"):
         assert tiltott not in szoveg, f"felrevezeto allitas: {tiltott}"
     assert "nem lehet lefoglalni" in r["megjegyzes"].lower()
-    assert r["idosavok"][0].get("premium") is True
-    assert r["legkorabbi"]["ido"].startswith("08:00")
+    assert r["legkorabbi"]["ido"].startswith("12:45")
+    assert any(x["premium"] for x in r["idosavok"])
 
 
 @teszt("nem talalgatunk a 'Can order' jelzesbol")
